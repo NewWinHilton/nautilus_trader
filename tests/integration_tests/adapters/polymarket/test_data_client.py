@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -153,7 +153,8 @@ def test_tick_size_change_rebuilds_local_book_precision(event_loop) -> None:
     rebuilt_book = client._local_books[instrument_id]
     bid_price = rebuilt_book.best_bid_price()
     ask_price = rebuilt_book.best_ask_price()
-    assert bid_price is not None and ask_price is not None
+    assert bid_price is not None
+    assert ask_price is not None
     assert bid_price.precision == ask_price.precision == 3
 
     assert any(

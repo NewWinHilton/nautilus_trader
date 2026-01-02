@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -299,10 +299,10 @@ class TestInstrumentProviderPyo3:
             size_precision=6,
             price_increment=Price.from_str("0.01"),
             size_increment=Quantity.from_str("0.000001"),
-            maker_fee=Decimal("0"),
-            taker_fee=Decimal("0"),
-            margin_init=Decimal("0"),
-            margin_maint=Decimal("0"),
+            maker_fee=Decimal(0),
+            taker_fee=Decimal(0),
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
             multiplier=None,
             lot_size=None,
             max_quantity=Quantity.from_str("9000"),
@@ -334,8 +334,8 @@ class TestInstrumentProviderPyo3:
             size_increment=Quantity.from_str("0.1"),
             maker_fee=Decimal("0.0003"),
             taker_fee=Decimal("0.0003"),
-            margin_init=Decimal("0"),  # TBD
-            margin_maint=Decimal("0"),  # TBD
+            margin_init=Decimal(0),  # TBD
+            margin_maint=Decimal(0),  # TBD
             multiplier=None,
             lot_size=None,
             max_quantity=Quantity.from_str("9000"),

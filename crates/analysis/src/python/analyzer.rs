@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -54,7 +54,7 @@ impl PortfolioAnalyzer {
 
     #[pyo3(name = "get_performance_stats_returns")]
     fn py_get_performance_stats_returns(&self) -> HashMap<String, f64> {
-        self.get_performance_stats_returns()
+        self.get_performance_stats_returns().into_iter().collect()
     }
 
     #[pyo3(name = "get_performance_stats_pnls")]
@@ -64,12 +64,13 @@ impl PortfolioAnalyzer {
         unrealized_pnl: Option<&Money>,
     ) -> PyResult<HashMap<String, f64>> {
         self.get_performance_stats_pnls(currency, unrealized_pnl)
+            .map(|m| m.into_iter().collect())
             .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "get_performance_stats_general")]
     fn py_get_performance_stats_general(&self) -> HashMap<String, f64> {
-        self.get_performance_stats_general()
+        self.get_performance_stats_general().into_iter().collect()
     }
 
     #[pyo3(name = "add_return")]
@@ -267,7 +268,9 @@ impl PortfolioAnalyzer {
             .map(|p| {
                 // Try to get the underlying Rust Position
                 // For now, we'll need to handle Cython Position by accessing its _mem field
-                p.getattr(py, "_mem")?.extract::<Position>(py)
+                p.getattr(py, "_mem")?
+                    .extract::<Position>(py)
+                    .map_err(Into::into)
             })
             .collect::<PyResult<Vec<Position>>>()?;
 

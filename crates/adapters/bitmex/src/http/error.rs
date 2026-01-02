@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,7 @@
 
 //! Error structures and enumerations for the BitMEX integration.
 
-use nautilus_network::http::HttpClientError;
-use reqwest::StatusCode;
+use nautilus_network::http::{HttpClientError, StatusCode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

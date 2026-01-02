@@ -49,7 +49,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
@@ -60,6 +60,7 @@ nautilus-serialization = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
@@ -75,10 +76,9 @@ alloy = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-signer-local = { workspace = true }
-alloy-sol-types = "1.4.1"
+alloy-sol-types = { workspace = true }
 rmp-serde = { workspace = true }
 log = { workspace = true }
-reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -102,30 +102,38 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+axum = { workspace = true }
 criterion = { workspace = true }
+futures-util = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 
 [[bin]]
 name = "hyperliquid-http-public"
 path = "bin/http_public.rs"
+doc = false
 
 [[bin]]
 name = "hyperliquid-http-private"
 path = "bin/http_private.rs"
+doc = false
 
 [[bin]]
 name = "hyperliquid-ws-data"
 path = "bin/ws_data.rs"
+doc = false
 
 [[bin]]
 name = "hyperliquid-ws-exec"
 path = "bin/ws_exec.rs"
-
-[[bin]]
-name = "hyperliquid-ws-post"
-path = "bin/ws_post.rs"
+doc = false
 
 [[bin]]
 name = "hyperliquid-http-exec"
 path = "bin/http_exec.rs"
+doc = false
+
+[[bin]]
+name = "hyperliquid-capture-test-data"
+path = "bin/capture_test_data.rs"
+doc = false

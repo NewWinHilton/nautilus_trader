@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example of using custom url for the Coinbase International sandbox
     let base_url = COINBASE_INTX_REST_SANDBOX_URL.to_string();
-    let client = CoinbaseIntxHttpClient::new(Some(base_url), Some(60));
+    let client = CoinbaseIntxHttpClient::new(Some(base_url), Some(60))?;
 
     let resp = client.request_instruments().await?;
     for inst in resp {

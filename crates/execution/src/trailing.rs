@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -74,8 +74,14 @@ pub fn trailing_stop_calculate(
     let trigger_type = order.trigger_type().unwrap();
     let trailing_offset = order.trailing_offset().unwrap();
     let trailing_offset_type = order.trailing_offset_type().unwrap();
-    assert!(trigger_type != TriggerType::NoTrigger);
-    assert!(trailing_offset_type != TrailingOffsetType::NoTrailingOffset,);
+    anyhow::ensure!(
+        trigger_type != TriggerType::NoTrigger,
+        "Invalid `TriggerType::NoTrigger` for trailing stop calculation"
+    );
+    anyhow::ensure!(
+        trailing_offset_type != TrailingOffsetType::NoTrailingOffset,
+        "Invalid `TrailingOffsetType::NoTrailingOffset` for trailing stop calculation"
+    );
 
     let mut new_trigger_price: Option<Price>;
     let mut new_limit_price: Option<Price> = None;
@@ -269,9 +275,6 @@ pub fn trailing_stop_calculate_with_bid_ask(
     Ok(Price::new(price_value, price_increment.precision))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_model::{

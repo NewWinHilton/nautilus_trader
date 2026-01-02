@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,7 +43,7 @@ class TestBetfairSockets:
         self.loop = request.getfixturevalue("event_loop")
         self.client = BetfairTestStubs.betfair_client(loop=self.loop)
 
-        yield
+        return
 
     def _build_stream_client(
         self,
@@ -252,7 +252,7 @@ def test_betfair_messages_not_mistaken_for_fix():
 
 
 @pytest.mark.parametrize(
-    "raw_message,expected_type",
+    ("raw_message", "expected_type"),
     [
         (b'{"op":"connection","connectionId":"123"}\r\n', Connection),
         (

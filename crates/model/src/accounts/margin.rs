@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,12 +19,12 @@
 #![allow(dead_code)]
 
 use std::{
-    collections::HashMap,
     fmt::Display,
     hash::{Hash, Hasher},
     ops::{Deref, DerefMut},
 };
 
+use ahash::AHashMap;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -45,8 +45,8 @@ use crate::{
 )]
 pub struct MarginAccount {
     pub base: BaseAccount,
-    pub leverages: HashMap<InstrumentId, Decimal>,
-    pub margins: HashMap<InstrumentId, MarginBalance>,
+    pub leverages: AHashMap<InstrumentId, Decimal>,
+    pub margins: AHashMap<InstrumentId, MarginBalance>,
     pub default_leverage: Decimal,
 }
 
@@ -55,8 +55,8 @@ impl MarginAccount {
     pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
         Self {
             base: BaseAccount::new(event, calculate_account_state),
-            leverages: HashMap::new(),
-            margins: HashMap::new(),
+            leverages: AHashMap::new(),
+            margins: AHashMap::new(),
             default_leverage: Decimal::ONE,
         }
     }
@@ -92,8 +92,8 @@ impl MarginAccount {
     }
 
     #[must_use]
-    pub fn initial_margins(&self) -> HashMap<InstrumentId, Money> {
-        let mut initial_margins: HashMap<InstrumentId, Money> = HashMap::new();
+    pub fn initial_margins(&self) -> AHashMap<InstrumentId, Money> {
+        let mut initial_margins: AHashMap<InstrumentId, Money> = AHashMap::new();
         self.margins.values().for_each(|margin_balance| {
             initial_margins.insert(margin_balance.instrument_id, margin_balance.initial);
         });
@@ -101,8 +101,8 @@ impl MarginAccount {
     }
 
     #[must_use]
-    pub fn maintenance_margins(&self) -> HashMap<InstrumentId, Money> {
-        let mut maintenance_margins: HashMap<InstrumentId, Money> = HashMap::new();
+    pub fn maintenance_margins(&self) -> AHashMap<InstrumentId, Money> {
+        let mut maintenance_margins: AHashMap<InstrumentId, Money> = AHashMap::new();
         self.margins.values().for_each(|margin_balance| {
             maintenance_margins.insert(margin_balance.instrument_id, margin_balance.maintenance);
         });
@@ -193,6 +193,26 @@ impl MarginAccount {
         margin_balance.unwrap().maintenance
     }
 
+    /// Returns the margin balance for the specified instrument.
+    #[must_use]
+    pub fn margin(&self, instrument_id: &InstrumentId) -> Option<MarginBalance> {
+        self.margins.get(instrument_id).copied()
+    }
+
+    /// Updates the margin balance for the specified instrument with both initial and maintenance.
+    pub fn update_margin(&mut self, margin_balance: MarginBalance) {
+        self.margins
+            .insert(margin_balance.instrument_id, margin_balance);
+        self.recalculate_balance(margin_balance.currency);
+    }
+
+    /// Clears the margin for the specified instrument.
+    pub fn clear_margin(&mut self, instrument_id: InstrumentId) {
+        if let Some(margin_balance) = self.margins.remove(&instrument_id) {
+            self.recalculate_balance(margin_balance.currency);
+        }
+    }
+
     /// Calculates the initial margin amount for the specified instrument and quantity.
     ///
     /// # Errors
@@ -272,13 +292,16 @@ impl MarginAccount {
     /// # Panics
     ///
     /// This function panics if:
-    /// - No starting balance exists for the given `currency`.
-    /// - Total free margin would be negative.
     /// - Margin calculation overflows.
     pub fn recalculate_balance(&mut self, currency: Currency) {
         let current_balance = match self.balances.get(&currency) {
-            Some(balance) => balance,
-            None => panic!("Cannot recalculate balance when no starting balance"),
+            Some(balance) => *balance,
+            None => {
+                // Initialize zero balance if none exists - can occur when account
+                // state doesn't include a balance for the position's cost currency
+                let zero = Money::from_raw(0, currency);
+                AccountBalance::new(zero, zero, zero)
+            }
         };
 
         let mut total_margin: MoneyRaw = 0;
@@ -296,12 +319,15 @@ impl MarginAccount {
             }
         }
 
-        let total_free = current_balance.total.raw - total_margin;
-        // TODO error handle this with AccountMarginExceeded
-        assert!(
-            total_free >= 0,
-            "Cannot recalculate balance when total_free is less than 0.0"
-        );
+        // Clamp margin to total balance if it would result in negative free balance.
+        // This can occur transiently when venue and client state are out of sync.
+        let total_free = if total_margin > current_balance.total.raw {
+            total_margin = current_balance.total.raw;
+            0
+        } else {
+            current_balance.total.raw - total_margin
+        };
+
         let new_balance = AccountBalance::new(
             current_balance.total,
             Money::from_raw(total_margin, currency),
@@ -354,7 +380,7 @@ impl Account for MarginAccount {
         self.base_balance_total(currency)
     }
 
-    fn balances_total(&self) -> HashMap<Currency, Money> {
+    fn balances_total(&self) -> AHashMap<Currency, Money> {
         self.base_balances_total()
     }
 
@@ -362,7 +388,7 @@ impl Account for MarginAccount {
         self.base_balance_free(currency)
     }
 
-    fn balances_free(&self) -> HashMap<Currency, Money> {
+    fn balances_free(&self) -> AHashMap<Currency, Money> {
         self.base_balances_free()
     }
 
@@ -370,7 +396,7 @@ impl Account for MarginAccount {
         self.base_balance_locked(currency)
     }
 
-    fn balances_locked(&self) -> HashMap<Currency, Money> {
+    fn balances_locked(&self) -> AHashMap<Currency, Money> {
         self.base_balances_locked()
     }
 
@@ -394,11 +420,11 @@ impl Account for MarginAccount {
         self.balances.keys().copied().collect()
     }
 
-    fn starting_balances(&self) -> HashMap<Currency, Money> {
+    fn starting_balances(&self) -> AHashMap<Currency, Money> {
         self.balances_starting.clone()
     }
 
-    fn balances(&self) -> HashMap<Currency, AccountBalance> {
+    fn balances(&self) -> AHashMap<Currency, AccountBalance> {
         self.balances.clone()
     }
 
@@ -493,13 +519,9 @@ impl Hash for MarginAccount {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
+    use ahash::AHashMap;
     use nautilus_core::UnixNanos;
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -515,7 +537,7 @@ mod tests {
         },
         instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny, stubs::*},
         position::Position,
-        types::{Currency, Money, Price, Quantity},
+        types::{Currency, MarginBalance, Money, Price, Quantity},
     };
 
     #[rstest]
@@ -550,13 +572,13 @@ mod tests {
             margin_account.balance_locked(None),
             Some(Money::from("25000 USD"))
         );
-        let mut balances_total_expected = HashMap::new();
+        let mut balances_total_expected = AHashMap::new();
         balances_total_expected.insert(Currency::from("USD"), Money::from("1525000 USD"));
         assert_eq!(margin_account.balances_total(), balances_total_expected);
-        let mut balances_free_expected = HashMap::new();
+        let mut balances_free_expected = AHashMap::new();
         balances_free_expected.insert(Currency::from("USD"), Money::from("1500000 USD"));
         assert_eq!(margin_account.balances_free(), balances_free_expected);
-        let mut balances_locked_expected = HashMap::new();
+        let mut balances_locked_expected = AHashMap::new();
         balances_locked_expected.insert(Currency::from("USD"), Money::from("25000 USD"));
         assert_eq!(margin_account.balances_locked(), balances_locked_expected);
     }
@@ -982,5 +1004,44 @@ mod tests {
 
         // Should return empty PnL list
         assert_eq!(pnls.len(), 0);
+    }
+
+    #[rstest]
+    fn test_margin_accessor(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let margin_balance = MarginBalance::new(
+            Money::from("1000 USD"),
+            Money::from("500 USD"),
+            instrument_id_aud_usd_sim,
+        );
+
+        margin_account.update_margin(margin_balance);
+
+        let retrieved = margin_account.margin(&instrument_id_aud_usd_sim);
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.initial, Money::from("1000 USD"));
+        assert_eq!(retrieved.maintenance, Money::from("500 USD"));
+        assert_eq!(retrieved.instrument_id, instrument_id_aud_usd_sim);
+    }
+
+    #[rstest]
+    fn test_clear_margin(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let margin_balance = MarginBalance::new(
+            Money::from("1000 USD"),
+            Money::from("500 USD"),
+            instrument_id_aud_usd_sim,
+        );
+
+        margin_account.update_margin(margin_balance);
+        assert!(margin_account.margin(&instrument_id_aud_usd_sim).is_some());
+
+        margin_account.clear_margin(instrument_id_aud_usd_sim);
+        assert!(margin_account.margin(&instrument_id_aud_usd_sim).is_none());
     }
 }

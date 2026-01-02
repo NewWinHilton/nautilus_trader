@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -170,32 +170,6 @@ mod tests {
         unsafe {
             // reconstruct the struct and drop the memory to deallocate
             let _ = Vec::from_raw_parts(ptr.cast::<u64>(), len, cap);
-        }
-    }
-
-    /// After deallocating the vector the block of memory may not
-    /// contain the same values.
-    #[rstest]
-    #[ignore = "Flaky on some platforms"]
-    fn drop_test() {
-        let test_data = vec![1, 2, 3];
-        let cvec: CVec = {
-            let data = test_data.clone();
-            data.into()
-        };
-
-        let CVec { ptr, len, cap } = cvec;
-        let data = ptr.cast::<u64>();
-
-        unsafe {
-            let data: Vec<u64> = Vec::from_raw_parts(ptr.cast::<u64>(), len, cap);
-            drop(data);
-        }
-
-        unsafe {
-            assert_ne!(*data, test_data[0]);
-            assert_ne!(*data.add(1), test_data[1]);
-            assert_ne!(*data.add(2), test_data[2]);
         }
     }
 

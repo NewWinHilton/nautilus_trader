@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let mut ws_client = OKXWebSocketClient::from_env().unwrap();
-    ws_client.initialize_instruments_cache(instruments.clone());
+    ws_client.cache_instruments(instruments.clone());
     ws_client.connect().await?;
 
     let instrument_id = InstrumentId::from("BTC-USD-SWAP.OKX");

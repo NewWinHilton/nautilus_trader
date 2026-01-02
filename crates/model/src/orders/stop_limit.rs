@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -399,6 +399,10 @@ impl Order for StopLimitOrder {
 
     fn leaves_qty(&self) -> Quantity {
         self.leaves_qty
+    }
+
+    fn overfill_qty(&self) -> Quantity {
+        self.overfill_qty
     }
 
     fn avg_px(&self) -> Option<f64> {

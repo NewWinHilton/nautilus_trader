@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -45,11 +45,7 @@ pub const MAX_SQRT_RATIO: U160 = U160::from_limbs([
 pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
     let abs_tick = tick.abs();
 
-    assert!(
-        abs_tick <= PoolTick::MAX_TICK,
-        "Tick {} out of bounds",
-        tick
-    );
+    assert!(abs_tick <= PoolTick::MAX_TICK, "Tick {tick} out of bounds");
 
     // Equivalent: ratio = 2**128 / sqrt(1.0001) if abs_tick & 0x1 else 1 << 128
     let mut ratio = if abs_tick & 0x1 != 0 {
@@ -229,10 +225,6 @@ pub fn get_tick_at_sqrt_ratio(sqrt_price_x96: U160) -> i32 {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -365,9 +357,7 @@ mod tests {
         let diff = (tick - theoretical_tick).abs();
         assert!(
             diff <= 1,
-            "Tick {} differs from theoretical {} by more than 1",
-            tick,
-            theoretical_tick
+            "Tick {tick} differs from theoretical {theoretical_tick} by more than 1"
         );
 
         // Test 2: Check that ratio is between tick and tick+1
@@ -377,15 +367,11 @@ mod tests {
 
         assert!(
             ratio_u256 >= ratio_of_tick,
-            "Ratio {} should be >= ratio of tick {}",
-            ratio_u256,
-            ratio_of_tick
+            "Ratio {ratio_u256} should be >= ratio of tick {ratio_of_tick}"
         );
         assert!(
             ratio_u256 < ratio_of_tick_plus_one,
-            "Ratio {} should be < ratio of tick+1 {}",
-            ratio_u256,
-            ratio_of_tick_plus_one
+            "Ratio {ratio_u256} should be < ratio of tick+1 {ratio_of_tick_plus_one}"
         );
     }
 
@@ -399,11 +385,7 @@ mod tests {
 
         for (sqrt_ratio, expected_tick) in test_cases {
             let result = get_tick_at_sqrt_ratio(sqrt_ratio);
-            assert_eq!(
-                result, expected_tick,
-                "Failed for sqrt_ratio {}",
-                sqrt_ratio
-            );
+            assert_eq!(result, expected_tick, "Failed for sqrt_ratio {sqrt_ratio}");
         }
     }
 
@@ -426,15 +408,13 @@ mod tests {
                 // Should be exact for round trip
                 assert_eq!(
                     recovered_tick, original_tick,
-                    "Round trip failed: {} -> {} -> {}",
-                    original_tick, sqrt_ratio, recovered_tick
+                    "Round trip failed: {original_tick} -> {sqrt_ratio} -> {recovered_tick}"
                 );
             } else {
                 // For very high ticks, the sqrt_ratio exceeds MAX_SQRT_RATIO
                 // This is expected behavior - not all ticks can round-trip
                 println!(
-                    "Tick {} produces sqrt_ratio {} which exceeds MAX_SQRT_RATIO",
-                    original_tick, sqrt_ratio
+                    "Tick {original_tick} produces sqrt_ratio {sqrt_ratio} which exceeds MAX_SQRT_RATIO"
                 );
             }
         }

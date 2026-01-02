@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,15 +34,14 @@ fn websocket_config() -> WebSocketConfig {
     WebSocketConfig {
         url: "ws://server:8080".to_string(),
         headers: vec![],
-        message_handler: None,
         heartbeat: None,
         heartbeat_msg: None,
-        ping_handler: None,
         reconnect_timeout_ms: Some(2_000),
         reconnect_delay_initial_ms: Some(50),
         reconnect_delay_max_ms: Some(500),
         reconnect_backoff_factor: Some(1.5),
         reconnect_jitter_ms: Some(10),
+        reconnect_max_attempts: None,
     }
 }
 
@@ -91,14 +90,11 @@ fn test_turmoil_real_websocket_basic_connect(websocket_config: WebSocketConfig) 
 
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
-        let config = WebSocketConfig {
-            message_handler: Some(handler),
-            ..websocket_config
-        };
 
-        let client = WebSocketClient::connect(config, None, vec![], None)
-            .await
-            .expect("Should connect");
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .expect("Should connect");
 
         // Verify client is active
         assert!(client.is_active(), "Client should be active after connect");
@@ -172,14 +168,11 @@ fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfi
 
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
-        let config = WebSocketConfig {
-            message_handler: Some(handler),
-            ..websocket_config
-        };
 
-        let client = WebSocketClient::connect(config, None, vec![], None)
-            .await
-            .expect("Should connect");
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .expect("Should connect");
 
         // Wait to receive first message
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -224,14 +217,11 @@ fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocket
 
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
-        let config = WebSocketConfig {
-            message_handler: Some(handler),
-            ..websocket_config
-        };
 
-        let client = WebSocketClient::connect(config, None, vec![], None)
-            .await
-            .expect("Should connect");
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .expect("Should connect");
 
         // Send message before partition
         client

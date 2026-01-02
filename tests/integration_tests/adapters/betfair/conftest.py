@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,27 +41,27 @@ from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     return betting_instrument()
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     return BETFAIR_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state() -> AccountState:
     return TestEventStubs.betting_account_state(account_id=AccountId("BETFAIR-001"))
 
 
-@pytest.fixture()
+@pytest.fixture
 def betfair_client(event_loop):
     return BetfairTestStubs.betfair_client(event_loop)
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument_provider(betfair_client):
     config = BetfairInstrumentProviderConfig(
         account_currency="GBP",
@@ -73,7 +73,7 @@ def instrument_provider(betfair_client):
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client(
     mocker,
     betfair_client,
@@ -134,7 +134,7 @@ def data_client(
     return data_client
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client(
     mocker,
     betfair_client,
@@ -179,14 +179,14 @@ def exec_client(
     return exec_client
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_catalog(tmp_path) -> ParquetDataCatalog:
     catalog: ParquetDataCatalog = setup_catalog(protocol="memory", path=tmp_path / "catalog")
     load_betfair_data(catalog)
     return catalog
 
 
-@pytest.fixture()
+@pytest.fixture
 def parser() -> BetfairParser:
     return BetfairParser(currency="GBP")
 

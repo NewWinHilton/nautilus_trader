@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -69,10 +69,12 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashMap;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::StreamExt;
 use heck::ToSnakeCase;
 use itertools::Itertools;
+use nautilus_common::live::get_runtime;
 use nautilus_core::{
     UnixNanos,
     datetime::{iso8601_to_unix_nanos, unix_nanos_to_iso8601},
@@ -178,7 +180,7 @@ impl ParquetDataCatalog {
     #[must_use]
     pub fn new(
         base_path: PathBuf,
-        storage_options: Option<std::collections::HashMap<String, String>>,
+        storage_options: Option<AHashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<parquet::basic::Compression>,
         max_row_group_size: Option<usize>,
@@ -228,7 +230,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use std::collections::HashMap;
+    /// use ahash::AHashMap;
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// // Local filesystem
@@ -270,7 +272,7 @@ impl ParquetDataCatalog {
     /// ```
     pub fn from_uri(
         uri: &str,
-        storage_options: Option<std::collections::HashMap<String, String>>,
+        storage_options: Option<AHashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<parquet::basic::Compression>,
         max_row_group_size: Option<usize>,
@@ -1078,6 +1080,9 @@ impl ParquetDataCatalog {
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix + TryFrom<Data>,
     {
+        // Reset session to allow repeated queries (streams are consumed on each query)
+        self.reset_session();
+
         let query_result = self.query::<T>(instrument_ids, start, end, where_clause, files)?;
         let all_data = query_result.collect();
 
@@ -1612,7 +1617,7 @@ impl ParquetDataCatalog {
     where
         F: std::future::Future<Output = anyhow::Result<R>>,
     {
-        let rt = nautilus_common::runtime::get_runtime();
+        let rt = get_runtime();
         rt.block_on(future)
     }
 }

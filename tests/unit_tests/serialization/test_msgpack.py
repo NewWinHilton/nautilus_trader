@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -532,8 +532,8 @@ class TestMsgSpecSerializer:
             price=Price(1.00000, precision=5),
             trigger_price=Price(1.00010, precision=5),
             trigger_type=TriggerType.MARK_PRICE,
-            limit_offset=Decimal("50"),
-            trailing_offset=Decimal("50"),
+            limit_offset=Decimal(50),
+            trailing_offset=Decimal(50),
             trailing_offset_type=TrailingOffsetType.TICKS,
             time_in_force=TimeInForce.GTD,
             expire_time_ns=1_000_000_000 * 60,
@@ -560,8 +560,8 @@ class TestMsgSpecSerializer:
             price=None,
             trigger_price=None,
             trigger_type=TriggerType.MARK_PRICE,
-            limit_offset=Decimal("50"),
-            trailing_offset=Decimal("50"),
+            limit_offset=Decimal(50),
+            trailing_offset=Decimal(50),
             trailing_offset_type=TrailingOffsetType.TICKS,
             time_in_force=TimeInForce.GTD,
             expire_time_ns=1_000_000_000 * 60,

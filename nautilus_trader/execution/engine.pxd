@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -60,10 +60,13 @@ cdef class ExecutionEngine(Component):
     cdef readonly dict[StrategyId, str] _topic_cache_order_events
     cdef readonly dict[StrategyId, str] _topic_cache_position_events
     cdef readonly dict[InstrumentId, str] _topic_cache_fill_events
+    cdef readonly dict[InstrumentId, str] _topic_cache_cancel_events
     cdef readonly dict[ClientId, str] _topic_cache_commands
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly bint allow_overfills
+    """If order fills exceeding order quantity are allowed (logs warning instead of raising).\n\n:returns: `bool`"""
     cdef readonly bint convert_quote_qty_to_base
     """If quote-denominated order quantities should be converted to base units before submission.\n\n:returns: `bool`"""
     cdef readonly bint manage_own_order_books
@@ -112,6 +115,7 @@ cdef class ExecutionEngine(Component):
     cdef str _get_order_events_topic(self, StrategyId strategy_id)
     cdef str _get_position_events_topic(self, StrategyId strategy_id)
     cdef str _get_fill_events_topic(self, InstrumentId instrument_id)
+    cdef str _get_cancel_events_topic(self, InstrumentId instrument_id)
     cdef str _get_commands_topic(self, ClientId client_id)
 
     cpdef void _set_position_id_counts(self)
@@ -148,12 +152,14 @@ cdef class ExecutionEngine(Component):
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type, Order order=*)
     cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill, Order order=*)
     cpdef PositionId _determine_netting_position_id(self, OrderFilled fill)
-    cpdef void _apply_event_to_order(self, Order order, OrderEvent event)
+    cdef bint _check_overfill(self, Order order, OrderFilled fill)
+    cpdef bint _apply_event_to_order(self, Order order, OrderEvent event)
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type)
     cdef bint _is_leg_fill(self, OrderFilled fill)
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type)
     cpdef void _handle_leg_fill_without_order(self, OrderFilled fill)
-    cpdef Position _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
+    cpdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
+    cpdef void _reopen_position(self, Position position, OmsType oms_type)
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill)
     cpdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)

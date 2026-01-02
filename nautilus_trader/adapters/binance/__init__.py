@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,7 @@ subpackage's top level, so downstream code can simply import from
 ``nautilus_trader.adapters.binance``.
 
 """
+
 from typing import Final
 
 import pyarrow as pa
@@ -37,6 +38,7 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.config import BinanceInstrumentProviderConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
@@ -99,6 +101,7 @@ __all__ = [
     "BinanceExecClientConfig",
     "BinanceFuturesInstrumentProvider",
     "BinanceFuturesMarkPriceUpdate",
+    "BinanceInstrumentProviderConfig",
     "BinanceKeyType",
     "BinanceLiveDataClientFactory",
     "BinanceLiveExecClientFactory",

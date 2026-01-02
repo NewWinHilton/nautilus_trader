@@ -26,14 +26,14 @@ The Cache serves multiple key purposes:
 - In live contexts, the engine applies updates asynchronously, so you might see a brief delay between an event and its appearance in the `Cache`.
 - All data flows through the `Cache` before reaching your strategy’s callbacks – see the diagram below:
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌───────────────────────┐
-│                 │     │                 │     │                 │     │                       │
-│                 │     │                 │     │                 │     │   Strategy callback:  │
-│      Data       ├─────►   DataEngine    ├─────►     Cache       ├─────►                       │
-│                 │     │                 │     │                 │     │   on_data(...)        │
-│                 │     │                 │     │                 │     │                       │
-└─────────────────┘     └─────────────────┘     └─────────────────┘     └───────────────────────┘
+```mermaid
+flowchart LR
+    data[Data]
+    engine[DataEngine]
+    cache[Cache]
+    callback["Strategy callback:<br/>on_data(...)"]
+
+    data --> engine --> cache --> callback
 ```
 
 ### Basic example
@@ -41,7 +41,7 @@ The Cache serves multiple key purposes:
 Within a strategy, you can access the `Cache` through `self.cache`. Here’s a typical example:
 
 :::note
-Anywhere you find `self`, it refers mostly to the `Strategy` itself.
+Within a `Strategy` class, `self` refers to the strategy instance.
 :::
 
 ```python
@@ -156,7 +156,7 @@ All market data in the cache uses reverse indexing, so the most recent entry sit
 
 ```python
 # Get a list of all cached bars for a bar type
-bars = self.cache.bars(bar_type)  # Returns List[Bar] or an empty list if no bars found
+bars = self.cache.bars(bar_type)  # Returns list[Bar] or an empty list if no bars found
 
 # Get the most recent bar
 latest_bar = self.cache.bar(bar_type)  # Returns Bar or None if no such object exists
@@ -173,7 +173,7 @@ has_bars = self.cache.has_bars(bar_type)    # Returns bool indicating if any bar
 
 ```python
 # Get quotes
-quotes = self.cache.quote_ticks(instrument_id)                     # Returns List[QuoteTick] or an empty list if no quotes found
+quotes = self.cache.quote_ticks(instrument_id)                     # Returns list[QuoteTick] or an empty list if no quotes found
 latest_quote = self.cache.quote_tick(instrument_id)                # Returns QuoteTick or None if no such object exists
 second_last_quote = self.cache.quote_tick(instrument_id, index=1)  # Returns QuoteTick or None if no such object exists
 
@@ -186,7 +186,7 @@ has_quotes = self.cache.has_quote_ticks(instrument_id)    # Returns bool indicat
 
 ```python
 # Get trades
-trades = self.cache.trade_ticks(instrument_id)         # Returns List[TradeTick] or an empty list if no trades found
+trades = self.cache.trade_ticks(instrument_id)         # Returns list[TradeTick] or an empty list if no trades found
 latest_trade = self.cache.trade_tick(instrument_id)    # Returns TradeTick or None if no such object exists
 second_last_trade = self.cache.trade_tick(instrument_id, index=1)  # Returns TradeTick or None if no such object exists
 
@@ -225,7 +225,7 @@ price = self.cache.price(
 ```python
 from nautilus_trader.core.rust.model import PriceType, AggregationSource
 
-# Get all available bar types for an instrument; Returns List[BarType].
+# Get all available bar types for an instrument; Returns list[BarType].
 bar_types = self.cache.bar_types(
     instrument_id=instrument_id,
     price_type=PriceType.LAST,  # Options: BID, ASK, MID, LAST

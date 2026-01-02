@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -64,6 +64,8 @@ cdef class FuzzyCandle:
         self.lower_wick_size = lower_wick_size
 
     def __eq__(self, FuzzyCandle other) -> bool:
+        if other is None:
+            return False
         return self.direction == other.direction \
             and self.size == other.size \
             and self.body_size == other.body_size \

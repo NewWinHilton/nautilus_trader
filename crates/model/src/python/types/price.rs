@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -345,6 +345,18 @@ impl Price {
     #[pyo3(name = "from_str")]
     fn py_from_str(value: &str) -> PyResult<Self> {
         Self::from_str(value).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_decimal")]
+    fn py_from_decimal(decimal: Decimal) -> PyResult<Self> {
+        Self::from_decimal(decimal).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_decimal_dp")]
+    fn py_from_decimal_dp(decimal: Decimal, precision: u8) -> PyResult<Self> {
+        Self::from_decimal_dp(decimal, precision).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "is_zero")]

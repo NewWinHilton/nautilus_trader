@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,6 @@
 
 from unittest.mock import AsyncMock
 
-import msgspec
 import pytest
 from ibapi.contract import ContractDetails
 
@@ -38,7 +37,7 @@ def mock_ib_contract_calls(mocker, instrument_provider, contract_details: Contra
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_equity_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
@@ -64,7 +63,7 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
     assert 2, equity.price_precision
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_futures_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("CLZ3.NYMEX")
@@ -87,7 +86,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
     assert future.price_precision == 2
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_option_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("TSLA230120C00100000.MIAX")
@@ -108,14 +107,14 @@ async def test_load_option_contract_instrument(mocker, instrument_provider):
     assert option.id == instrument_id
     assert option.asset_class == AssetClass.EQUITY
     assert option.multiplier == 100
-    assert option.expiration_ns == 1674172800000000000
+    assert option.expiration_ns == 1674248400000000000
     assert option.strike_price == Price.from_str("100.0")
     assert option.option_kind == OptionKind.CALL
     assert option.price_increment == Price.from_str("0.01")
     assert option.price_precision == 2
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_forex_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
@@ -138,7 +137,7 @@ async def test_load_forex_contract_instrument(mocker, instrument_provider):
     assert fx.price_precision == 5
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     # Arrange
     mock_ib_contract_calls(
@@ -156,7 +155,7 @@ async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     assert instrument_provider.contract_id_to_instrument_id == expected
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_instrument_using_contract_id(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
@@ -178,56 +177,7 @@ async def test_load_instrument_using_contract_id(mocker, instrument_provider):
     assert fx.price_precision == 5
 
 
-@pytest.mark.skip(reason="Scope of test not clear!")
-@pytest.mark.asyncio()
-async def test_none_filters(instrument_provider):
-    # Act, Arrange, Assert
-    instrument_provider.load_all(None)
-
-
-@pytest.mark.skip(reason="Scope of test not clear!")
-@pytest.mark.asyncio()
-async def test_instrument_filter_callable_none(mocker, instrument_provider):
-    # Arrange
-    mock_ib_contract_calls(
-        mocker=mocker,
-        instrument_provider=instrument_provider,
-        contract_details=IBTestContractStubs.aapl_equity_contract_details(),
-    )
-
-    # Act
-    await instrument_provider.load_async(
-        IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ"),
-    )
-
-    # Assert
-    assert len(instrument_provider.get_all()) == 1
-
-
-@pytest.mark.skip(reason="Scope of test not clear!")
-@pytest.mark.asyncio()
-async def test_instrument_filter_callable_option_filter(mocker, instrument_provider):
-    # Arrange
-    mock_ib_contract_calls(
-        mocker=mocker,
-        instrument_provider=instrument_provider,
-        contract_details=IBTestContractStubs.tsla_option_contract_details(),
-    )
-
-    # Act
-    new_cb = "tests.integration_tests.adapters.interactive_brokers.test_kit:filter_out_options"
-    instrument_provider.config = msgspec.structs.replace(
-        instrument_provider.config,
-        filter_callable=new_cb,
-    )
-    await instrument_provider.load_async(instrument_id=None)
-    option_instruments = instrument_provider.get_all()
-
-    # Assert
-    assert len(option_instruments) == 0
-
-
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_bag_contract_loading_invalid_no_combo_legs(instrument_provider):
     """
     Test that loading BAG contract without combo legs raises error.
@@ -246,7 +196,7 @@ async def test_bag_contract_loading_invalid_no_combo_legs(instrument_provider):
         await instrument_provider._load_bag_contract(bag_contract)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_bag_contract_venue_determination(instrument_provider):
     """
     Test venue determination for BAG contracts.
@@ -277,3 +227,95 @@ async def test_bag_contract_venue_determination(instrument_provider):
     # Assert
     assert venue_smart == "CME"  # Should use primaryExchange when exchange is SMART
     assert venue_direct == "ARCA"  # Should use exchange directly
+
+
+@pytest.mark.asyncio
+async def test_create_bag_contract_with_explicit_exchange(instrument_provider):
+    """
+    Test that _create_bag_contract uses explicit exchange parameter when provided.
+    """
+    from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+
+    # Arrange - Create mock leg contract details
+    leg1_contract = IBContract(
+        secType="FUT",
+        symbol="ES",
+        conId=100,
+        exchange="CME",
+        currency="USD",
+        multiplier="50",
+    )
+    leg1_details = IBContractDetails(contract=leg1_contract, minTick=0.25, underSymbol="ES")
+
+    leg2_contract = IBContract(
+        secType="FUT",
+        symbol="ES",
+        conId=101,
+        exchange="CME",
+        currency="USD",
+        multiplier="50",
+    )
+    leg2_details = IBContractDetails(contract=leg2_contract, minTick=0.25, underSymbol="ES")
+
+    leg_contract_details = [(leg1_details, 1), (leg2_details, -1)]
+    instrument_id = None
+
+    # Act - Create BAG contract with explicit exchange
+    bag_contract = await instrument_provider._create_bag_contract(
+        leg_contract_details=leg_contract_details,
+        instrument_id=instrument_id,
+        exchange="CME",  # Explicit exchange
+    )
+
+    # Assert
+    assert bag_contract.exchange == "CME"
+    assert bag_contract.secType == "BAG"
+    assert bag_contract.symbol == "ES"
+    assert bag_contract.currency == "USD"
+    assert len(bag_contract.comboLegs) == 2
+
+
+@pytest.mark.asyncio
+async def test_create_bag_contract_defaults_to_smart(instrument_provider):
+    """
+    Test that _create_bag_contract defaults to SMART exchange when not provided.
+    """
+    from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+
+    # Arrange - Create mock leg contract details
+    leg1_contract = IBContract(
+        secType="FUT",
+        symbol="ES",
+        conId=100,
+        exchange="CME",
+        currency="USD",
+        multiplier="50",
+    )
+    leg1_details = IBContractDetails(contract=leg1_contract, minTick=0.25, underSymbol="ES")
+
+    leg2_contract = IBContract(
+        secType="FUT",
+        symbol="ES",
+        conId=101,
+        exchange="CME",
+        currency="USD",
+        multiplier="50",
+    )
+    leg2_details = IBContractDetails(contract=leg2_contract, minTick=0.25, underSymbol="ES")
+
+    leg_contract_details = [(leg1_details, 1), (leg2_details, -1)]
+    instrument_id = None
+
+    # Act - Create BAG contract without exchange (empty string should default to SMART)
+    bag_contract = await instrument_provider._create_bag_contract(
+        leg_contract_details=leg_contract_details,
+        instrument_id=instrument_id,
+        exchange="",  # Empty string should default to SMART
+    )
+
+    # Assert
+    assert bag_contract.exchange == "SMART"
+    assert bag_contract.secType == "BAG"
+    assert bag_contract.symbol == "ES"
+    assert bag_contract.currency == "USD"
+    assert len(bag_contract.comboLegs) == 2

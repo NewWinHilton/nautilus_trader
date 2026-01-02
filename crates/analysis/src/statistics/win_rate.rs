@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
@@ -43,7 +43,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
 pub struct WinRate {}
 
 impl Display for WinRate {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Win Rate")
     }
 }
@@ -57,7 +57,7 @@ impl PortfolioStatistic for WinRate {
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         if realized_pnls.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
         let (winners, losers): (Vec<f64>, Vec<f64>) =
@@ -75,10 +75,6 @@ impl PortfolioStatistic for WinRate {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use nautilus_core::approx_eq;
@@ -91,7 +87,7 @@ mod tests {
         let win_rate = WinRate {};
         let result = win_rate.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]

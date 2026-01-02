@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -128,7 +128,7 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
         stringify!(OrderBookDepth10) => {
             let depth_snapshots: Vec<OrderBookDepth10> = data
                 .into_iter()
-                .map(|obj| obj.extract::<OrderBookDepth10>())
+                .map(|obj| obj.extract::<OrderBookDepth10>().map_err(Into::into))
                 .collect::<PyResult<Vec<OrderBookDepth10>>>()?;
             py_book_depth10_to_arrow_record_batch_bytes(py, depth_snapshots)
         }

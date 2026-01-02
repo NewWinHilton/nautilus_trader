@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,10 @@ use nautilus_core::{
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
-    serialization::Serializable,
+    serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    },
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use ustr::Ustr;
@@ -243,9 +246,6 @@ impl InstrumentStatus {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::python::IntoPyObjectNautilusExt;

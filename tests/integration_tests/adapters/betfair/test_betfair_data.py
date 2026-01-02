@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,7 +21,6 @@ import msgspec
 import pytest
 from betfair_parser.spec.streaming import stream_decode
 
-from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
@@ -50,7 +49,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -73,8 +71,9 @@ def instrument_list(mock_load_markets_metadata):
     global INSTRUMENTS
 
     # Setup
-    # Get the running loop from pytest-asyncio (session-scoped)
-    loop = asyncio.get_running_loop()
+    # Create a new event loop for sync fixture
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     client = BetfairTestStubs.betfair_client(loop=loop)
     market_ids = BetfairDataProvider.market_ids()
@@ -92,11 +91,11 @@ def instrument_list(mock_load_markets_metadata):
     # Fill INSTRUMENTS global cache
     INSTRUMENTS.extend(instrument_provider.list_all())
     assert INSTRUMENTS  # TODO: Fix Betfair symbology
-    yield
+    return
     # pytest-asyncio manages loop lifecycle, no need to close
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_connect(mocker, data_client, instrument):
     # Arrange
     mocker.patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
@@ -112,7 +111,7 @@ async def test_connect(mocker, data_client, instrument):
     assert data_client.is_connected
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_subscriptions(data_client, instrument):
     # Arrange, Act
     data_client.subscribe_trade_ticks(
@@ -169,7 +168,7 @@ def test_stream_latency(mock_degrade, data_client):
     assert mock_degrade.call_count == 1
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_market_sub_image_market_def(data_client, mock_data_engine_process):
     # Arrange
     update = BetfairStreaming.mcm_SUB_IMAGE()
@@ -301,7 +300,7 @@ def test_orderbook_repr(data_client, mock_data_engine_process):
 
     # Assert
     ob_snap = mock_data_engine_process.call_args_list[14][0][0]
-    ob = create_betfair_order_book(InstrumentId(Symbol("1"), BETFAIR_VENUE))
+    ob = create_betfair_order_book(ob_snap.instrument_id)
     ob.apply(ob_snap)
     assert ob.best_ask_price() == betfair_float_to_price(1.71)
     assert ob.best_bid_price() == betfair_float_to_price(1.70)

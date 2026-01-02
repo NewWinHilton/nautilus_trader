@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -598,6 +598,7 @@ class NautilusKernel:
             rotation_interval=config.rotation_interval,
             rotation_time=config.rotation_time,
             rotation_timezone=config.rotation_timezone,
+            replace=config.replace_existing,
         )
         self._trader.subscribe("*", self._writer.write)
         self._log.info(f"Writing data & events to {path}")
@@ -1312,8 +1313,7 @@ class NautilusKernel:
 
     async def _await_engines_disconnected(self) -> None:
         self._log.info(
-            f"Awaiting engine disconnections "
-            f"({self._config.timeout_disconnection}s timeout)...",
+            f"Awaiting engine disconnections ({self._config.timeout_disconnection}s timeout)...",
             color=LogColor.BLUE,
         )
 
@@ -1344,7 +1344,7 @@ class NautilusKernel:
 
     async def _await_portfolio_initialization(self) -> bool:
         self._log.info(
-            "Awaiting portfolio initialization " f"({self._config.timeout_portfolio}s timeout)...",
+            f"Awaiting portfolio initialization ({self._config.timeout_portfolio}s timeout)...",
             color=LogColor.BLUE,
         )
 

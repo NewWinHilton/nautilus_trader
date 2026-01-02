@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,20 +16,22 @@
 use std::{collections::HashMap, fmt::Display, str::FromStr};
 
 use nautilus_core::{UUID4, UnixNanos};
-pub use nautilus_execution::models::latency::LatencyModel;
 use nautilus_model::{
     data::{delta::OrderBookDelta, deltas::OrderBookDeltas, order::BookOrder},
     enums::{AccountType, BookAction, OrderSide, PositionSide, RecordFlag},
     events::AccountState,
     identifiers::{AccountId, InstrumentId},
     reports::PositionStatusReport,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Money, Price, Quantity},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
 use crate::{
-    http::models::{HyperliquidL2Book, HyperliquidLevel},
+    http::{
+        models::{HyperliquidL2Book, HyperliquidLevel},
+        parse::get_currency,
+    },
     websocket::messages::{WsBookData, WsLevelData},
 };
 
@@ -183,36 +185,6 @@ impl HyperliquidDataConverter {
         }
     }
 
-    /// Create a latency model for order processing simulation
-    ///
-    /// This uses the execution crate's LatencyModel for simulating order processing latencies.
-    /// For real-time latency monitoring, use standard `tracing` macros.
-    pub fn create_latency_model(
-        &self,
-        base_latency_ns: u64,
-        insert_latency_ns: u64,
-        update_latency_ns: u64,
-        delete_latency_ns: u64,
-    ) -> LatencyModel {
-        LatencyModel::new(
-            UnixNanos::from(base_latency_ns),
-            UnixNanos::from(insert_latency_ns),
-            UnixNanos::from(update_latency_ns),
-            UnixNanos::from(delete_latency_ns),
-        )
-    }
-
-    /// Create a default latency model for Hyperliquid (typical network latencies)
-    pub fn create_default_latency_model(&self) -> LatencyModel {
-        // Typical latencies for crypto exchanges (in nanoseconds)
-        self.create_latency_model(
-            50_000_000, // 50ms base latency
-            10_000_000, // 10ms insert latency
-            5_000_000,  // 5ms update latency
-            5_000_000,  // 5ms delete latency
-        )
-    }
-
     /// Normalize an order's price and quantity for Hyperliquid
     ///
     /// This is a convenience method that uses the instrument configuration
@@ -261,7 +233,7 @@ impl HyperliquidDataConverter {
     fn get_config(&self, symbol: &Ustr) -> HyperliquidInstrumentInfo {
         self.configs.get(symbol).cloned().unwrap_or_else(|| {
             // Create default config with a placeholder instrument_id based on symbol
-            let instrument_id = InstrumentId::from(format!("{}.HYPER", symbol).as_str());
+            let instrument_id = InstrumentId::from(format!("{symbol}.HYPER").as_str());
             HyperliquidInstrumentInfo::default_crypto(instrument_id)
         })
     }
@@ -570,10 +542,10 @@ impl From<anyhow::Error> for ConversionError {
 impl Display for ConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidPrice { value } => write!(f, "Invalid price: {}", value),
-            Self::InvalidSize { value } => write!(f, "Invalid size: {}", value),
+            Self::InvalidPrice { value } => write!(f, "Invalid price: {value}"),
+            Self::InvalidSize { value } => write!(f, "Invalid size: {value}"),
             Self::OrderBookDeltasError(msg) => {
-                write!(f, "OrderBookDeltas error: {}", msg)
+                write!(f, "OrderBookDeltas error: {msg}")
             }
         }
     }
@@ -702,12 +674,6 @@ impl HyperliquidAccountState {
     /// This creates a standard Nautilus AccountState from the Hyperliquid-specific account state,
     /// converting balances and handling the margin account type since Hyperliquid supports leverage.
     ///
-    /// # Arguments
-    ///
-    /// * `account_id` - The account identifier for this state
-    /// * `ts_event` - When this state was observed/received
-    /// * `ts_init` - When this state object was created
-    ///
     /// # Returns
     ///
     /// A Nautilus AccountState event that can be processed by the platform
@@ -723,7 +689,7 @@ impl HyperliquidAccountState {
             .values()
             .map(|balance| {
                 // Create currency - Hyperliquid primarily uses USD/USDC
-                let currency = Currency::from(balance.asset.as_str());
+                let currency = get_currency(&balance.asset);
 
                 // Convert Decimal to f64 and create Money with proper currency
                 let total = Money::new(balance.total.to_f64().unwrap_or(0.0), currency);
@@ -858,14 +824,12 @@ pub fn parse_position_status_report(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -873,7 +837,7 @@ mod tests {
     where
         T: serde::de::DeserializeOwned,
     {
-        let path = format!("test_data/{}", filename);
+        let path = format!("test_data/{filename}");
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
     }
@@ -1165,8 +1129,8 @@ mod tests {
         assert_eq!(info.instrument_id, instrument_id);
         assert_eq!(info.price_decimals, 3);
         assert_eq!(info.size_decimals, 4);
-        assert_eq!(info.tick_size, Some(Decimal::new(1, 3))); // 0.001
-        assert_eq!(info.step_size, Some(Decimal::new(1, 4))); // 0.0001
+        assert_eq!(info.tick_size, Some(dec!(0.001))); // 0.001
+        assert_eq!(info.step_size, Some(dec!(0.0001))); // 0.0001
     }
 
     #[tokio::test]
@@ -1226,35 +1190,6 @@ mod tests {
         assert!(result.is_none());
         assert!(cache.is_empty());
         assert_eq!(cache.len(), 0);
-    }
-
-    #[rstest]
-    fn test_latency_model_creation() {
-        let converter = HyperliquidDataConverter::new();
-
-        // Test custom latency model
-        let latency_model = converter.create_latency_model(
-            100_000_000, // 100ms base
-            20_000_000,  // 20ms insert
-            10_000_000,  // 10ms update
-            10_000_000,  // 10ms delete
-        );
-
-        assert_eq!(latency_model.base_latency_nanos.as_u64(), 100_000_000);
-        assert_eq!(latency_model.insert_latency_nanos.as_u64(), 20_000_000);
-        assert_eq!(latency_model.update_latency_nanos.as_u64(), 10_000_000);
-        assert_eq!(latency_model.delete_latency_nanos.as_u64(), 10_000_000);
-
-        // Test default latency model
-        let default_model = converter.create_default_latency_model();
-        assert_eq!(default_model.base_latency_nanos.as_u64(), 50_000_000);
-        assert_eq!(default_model.insert_latency_nanos.as_u64(), 10_000_000);
-        assert_eq!(default_model.update_latency_nanos.as_u64(), 5_000_000);
-        assert_eq!(default_model.delete_latency_nanos.as_u64(), 5_000_000);
-
-        // Test that Display trait works
-        let display_str = format!("{}", default_model);
-        assert_eq!(display_str, "LatencyModel()");
     }
 
     #[rstest]

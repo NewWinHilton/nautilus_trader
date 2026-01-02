@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,3 +12,30 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! WebSocket errors for Hyperliquid.
+
+/// Errors that can occur during Hyperliquid WebSocket operations.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum HyperliquidWsError {
+    #[error("URL parsing failed: {0}")]
+    UrlParsing(String),
+
+    #[error("Message serialization failed: {0}")]
+    MessageSerialization(String),
+
+    #[error("Message deserialization failed: {0}")]
+    MessageDeserialization(String),
+
+    #[error("WebSocket connection failed: {0}")]
+    Connection(String),
+
+    #[error("Channel send failed: {0}")]
+    ChannelSend(String),
+
+    #[error("Client error: {0}")]
+    ClientError(String),
+
+    #[error("Tungstenite error: {0}")]
+    TungsteniteError(String),
+}

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,8 @@ import importlib
 from collections.abc import Callable
 from decimal import Decimal
 from io import StringIO
-from typing import Annotated, Any
+from typing import Annotated
+from typing import Any
 
 import msgspec
 import pandas as pd
@@ -428,10 +429,16 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         whether the instrument should be loaded
     log_warnings : bool, default True
         If parser warnings should be logged.
+    use_gamma_markets : bool, default False
+        Determines which API to use for loading market data:
+        - True: Gamma Markets API (experimental) - faster with server-side filtering, but provides less detailed data
+        - False: CLOB API (stable, default) - complete data, but slower due to sequential fetching
 
     """
 
     def __eq__(self, other):
+        if other is None:
+            return False
         return (
             self.load_all == other.load_all
             and self.load_ids == other.load_ids
@@ -447,6 +454,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
     filters: dict[str, Any] | None = None
     filter_callable: str | None = None
     log_warnings: bool = True
+    use_gamma_markets: bool = False
 
 
 class OrderEmulatorConfig(NautilusConfig, frozen=True):

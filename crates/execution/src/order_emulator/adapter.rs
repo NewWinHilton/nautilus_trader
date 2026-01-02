@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -67,7 +67,7 @@ impl OrderEmulatorAdapter {
 
     fn initialize_execute_handler(emulator: Rc<RefCell<OrderEmulator>>) {
         let handler = ShareableMessageHandler(Rc::new(OrderEmulatorExecuteHandler::new(
-            Ustr::from(&UUID4::new().to_string()),
+            Ustr::from(UUID4::new().as_str()),
             WeakCell::from(Rc::downgrade(&emulator)),
         )));
 
@@ -76,7 +76,7 @@ impl OrderEmulatorAdapter {
 
     fn initialize_on_event_handler(emulator: Rc<RefCell<OrderEmulator>>) {
         let handler = ShareableMessageHandler(Rc::new(OrderEmulatorOnEventHandler::new(
-            Ustr::from(&UUID4::new().to_string()),
+            Ustr::from(UUID4::new().as_str()),
             WeakCell::from(Rc::downgrade(&emulator)),
         )));
 

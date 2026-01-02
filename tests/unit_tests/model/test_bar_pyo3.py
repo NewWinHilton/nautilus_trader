@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -85,18 +85,22 @@ class TestBarSpecification:
         assert str(bar_spec) == "1-MINUTE-BID"
         assert repr(bar_spec) == "BarSpecification(1-MINUTE-BID)"
 
-    @pytest.mark.skip(reason="WIP")
     @pytest.mark.parametrize(
         "aggregation",
         [
             BarAggregation.TICK,
+            BarAggregation.VOLUME,
+            BarAggregation.VALUE,
+            BarAggregation.WEEK,
             BarAggregation.MONTH,
+            BarAggregation.YEAR,
         ],
     )
     def test_timedelta_for_unsupported_aggregations_raises_value_error(self, aggregation):
         # Arrange, Act, Assert
+        spec = BarSpecification(1, aggregation, price_type=PriceType.LAST)
+
         with pytest.raises(ValueError):
-            spec = BarSpecification(1, aggregation, price_type=PriceType.LAST)
             _ = spec.timedelta
 
     @pytest.mark.parametrize(

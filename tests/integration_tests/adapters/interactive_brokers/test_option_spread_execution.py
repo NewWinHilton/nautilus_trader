@@ -1,3 +1,17 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
 """
 Integration tests for Interactive Brokers option spread execution.
 
@@ -114,6 +128,7 @@ class TestOptionSpreadExecution:
         from nautilus_trader.model.identifiers import Symbol
         from nautilus_trader.model.identifiers import Venue
         from nautilus_trader.model.instruments import OptionContract
+        from nautilus_trader.model.instruments import OptionSpread
         from nautilus_trader.model.objects import Currency
         from nautilus_trader.model.objects import Price
         from nautilus_trader.model.objects import Quantity
@@ -156,8 +171,8 @@ class TestOptionSpreadExecution:
             ts_init=0,
         )
 
-        # Create a simple spread instrument for testing
-        self.option_spread = OptionContract(
+        # Create a spread instrument for testing (must be OptionSpread for is_spread() to return True)
+        self.option_spread = OptionSpread(
             instrument_id=InstrumentId(Symbol("(1)E1AQ5 C6400_(2)E1AQ5 P6440"), Venue("XCME")),
             raw_symbol=Symbol("(1)E1AQ5 C6400_(2)E1AQ5 P6440"),
             asset_class=AssetClass.EQUITY,
@@ -167,10 +182,9 @@ class TestOptionSpreadExecution:
             multiplier=Quantity.from_int(100),
             lot_size=Quantity.from_int(1),
             underlying="E1AQ5",
-            option_kind=OptionKind.CALL,  # Doesn't matter for spread
+            strategy_type="VERTICAL",
             activation_ns=0,
             expiration_ns=1640995200000000000,  # 2022-01-01
-            strike_price=Price.from_str("0.0"),  # Doesn't matter for spread
             ts_event=0,
             ts_init=0,
         )

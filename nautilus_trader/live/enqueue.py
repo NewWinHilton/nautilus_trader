@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Generic, TypeVar
 from weakref import WeakSet
 
 from nautilus_trader.common.component import Clock
@@ -22,10 +21,7 @@ from nautilus_trader.common.component import Logger
 from nautilus_trader.core.nautilus_pyo3 import NANOSECONDS_IN_SECOND
 
 
-T = TypeVar("T")
-
-
-class ThrottledEnqueuer(Generic[T]):
+class ThrottledEnqueuer[T]:
     """
     Manages enqueuing messages of type T onto an internal asynchronous queue.
 

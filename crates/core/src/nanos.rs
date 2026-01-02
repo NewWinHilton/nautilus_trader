@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,7 +38,8 @@
 //! `UnixNanos` can be created from and serialized to various formats:
 //!
 //! * Integer values are interpreted as nanoseconds since the UNIX epoch.
-//! * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds).
+//! * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds
+//!   using truncation, not rounding, for consistency with [`secs_to_nanos`](crate::datetime::secs_to_nanos)).
 //! * String values may be:
 //!   - A numeric string (interpreted as nanoseconds).
 //!   - A floating-point string (interpreted as seconds, converted to nanoseconds).
@@ -49,12 +50,15 @@
 //!
 //! * Negative timestamps are invalid and will result in an error.
 //! * Arithmetic operations will panic on overflow/underflow rather than wrapping.
+//! * The `as_i64()` method and `DateTime<Utc>` conversions will panic for timestamps
+//!   beyond approximately year 2262 (when nanoseconds exceed `i64::MAX`).
 
 use std::{
     cmp::Ordering,
     fmt::Display,
     ops::{Add, AddAssign, Deref, Sub, SubAssign},
     str::FromStr,
+    time::SystemTime,
 };
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -176,7 +180,7 @@ impl UnixNanos {
                 return Err("Unix timestamp is out of range".into());
             }
 
-            let nanos = nanos_f64.round() as u64;
+            let nanos = nanos_f64.trunc() as u64;
             return Ok(Self(nanos));
         }
 
@@ -310,15 +314,6 @@ impl From<UnixNanos> for u64 {
 ///
 /// For error handling without panicking, use [`str::parse::<UnixNanos>()`] which returns
 /// a [`Result`].
-///
-/// # Examples
-///
-/// ```
-/// use nautilus_core::UnixNanos;
-///
-/// let nanos = UnixNanos::from("1234567890");
-/// assert_eq!(nanos.as_u64(), 1234567890);
-/// ```
 impl From<&str> for UnixNanos {
     fn from(value: &str) -> Self {
         value
@@ -352,6 +347,22 @@ impl From<DateTime<Utc>> for UnixNanos {
             .expect("DateTime timestamp out of range for UnixNanos");
 
         assert!(nanos >= 0, "DateTime timestamp cannot be negative: {nanos}");
+
+        Self::from(nanos as u64)
+    }
+}
+
+impl From<SystemTime> for UnixNanos {
+    fn from(value: SystemTime) -> Self {
+        let duration = value
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("SystemTime before UNIX EPOCH");
+
+        let nanos = duration.as_nanos();
+        assert!(
+            nanos <= u64::MAX as u128,
+            "SystemTime overflowed u64 nanoseconds"
+        );
 
         Self::from(nanos as u64)
     }
@@ -520,7 +531,7 @@ impl<'de> Deserialize<'de> for UnixNanos {
             {
                 if !value.is_finite() {
                     return Err(E::custom(format!(
-                        "Unix timestamp must be finite, got {value}"
+                        "Unix timestamp must be finite, was {value}"
                     )));
                 }
                 if value < 0.0 {
@@ -534,7 +545,7 @@ impl<'de> Deserialize<'de> for UnixNanos {
                         "Unix timestamp {value} seconds is out of range"
                     )));
                 }
-                let nanos = nanos_f64.round() as u64;
+                let nanos = nanos_f64.trunc() as u64;
                 Ok(UnixNanos(nanos))
             }
 
@@ -550,9 +561,6 @@ impl<'de> Deserialize<'de> for UnixNanos {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use chrono::{Duration, TimeZone};
@@ -653,6 +661,20 @@ mod tests {
         let datetime = Utc.timestamp_opt(1_000_000_000, 0).unwrap(); // 1 billion seconds since epoch
         let nanos = UnixNanos::from(datetime);
         assert_eq!(nanos.as_u64(), 1_000_000_000_000_000_000);
+    }
+
+    #[rstest]
+    fn test_from_system_time() {
+        let system_time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+        let nanos = UnixNanos::from(system_time);
+        assert_eq!(nanos.as_u64(), 1_000_000_000_000_000_000);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "SystemTime before UNIX EPOCH")]
+    fn test_from_system_time_before_epoch() {
+        let system_time = std::time::UNIX_EPOCH - std::time::Duration::from_secs(1);
+        let _ = UnixNanos::from(system_time);
     }
 
     #[rstest]
@@ -917,6 +939,14 @@ mod tests {
         let json = "\"1234.567\"";
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
         assert_eq!(deserialized.as_u64(), 1_234_567_000_000);
+    }
+
+    #[rstest]
+    fn test_deserialize_float_uses_truncation() {
+        // Truncation (not rounding) for consistency with secs_to_nanos() etc
+        let json = "0.9999999999";
+        let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
+        assert_eq!(deserialized.as_u64(), 999_999_999); // Truncated, not rounded to 1B
     }
 
     #[rstest]

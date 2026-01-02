@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,12 +16,15 @@
 use std::{hint::black_box, sync::Arc};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_common::{messages::DataEvent, timer::TimeEventHandlerV2};
+use nautilus_common::{
+    messages::{DataEvent, data::DataCommand},
+    timer::TimeEventHandlerV2,
+};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Data, quote::QuoteTick, trade::TradeTick},
     enums::AggressorSide,
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
 
@@ -43,7 +46,7 @@ fn create_test_trade() -> TradeTick {
         price: Price::from("1.10000"),
         size: Quantity::from(100_000),
         aggressor_side: AggressorSide::Buyer,
-        trade_id: nautilus_model::identifiers::TradeId::from("123456"),
+        trade_id: TradeId::from("123456"),
         ts_event: UnixNanos::default(),
         ts_init: UnixNanos::default(),
     }
@@ -91,9 +94,7 @@ fn bench_runner_components(c: &mut Criterion) {
         b.iter(|| {
             // Simulate what AsyncRunner::new() does without the global state
             let (_data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-            let (_cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<
-                nautilus_common::messages::data::DataCommand,
-            >();
+            let (_cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
             let (_time_tx, _time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
             let (_signal_tx, _signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
         });

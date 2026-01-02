@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -604,7 +604,7 @@ class TestInstrument:
         with pytest.raises(ValueError):
             instrument.next_bid_price(100.123456)
 
-        tick_scheme_name = "FOREX_5DECIMAL"
+        tick_scheme_name = "FIXED_PRECISION_5"
 
         # Act
         instrument.set_tick_scheme(tick_scheme_name)

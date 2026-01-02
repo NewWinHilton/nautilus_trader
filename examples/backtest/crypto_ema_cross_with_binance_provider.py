@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     strategy_config = EMACrossTrailingStopConfig(
         instrument_id=instrument.id,
         bar_type=bar_type,
-        trade_size=Decimal("1"),
+        trade_size=Decimal(1),
         fast_ema_period=10,
         slow_ema_period=20,
         atr_period=20,

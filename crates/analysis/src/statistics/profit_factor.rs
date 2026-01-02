@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
@@ -45,7 +45,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
 pub struct ProfitFactor {}
 
 impl Display for ProfitFactor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Profit Factor")
     }
 }
@@ -62,14 +62,17 @@ impl PortfolioStatistic for ProfitFactor {
             return Some(f64::NAN);
         }
 
+        // Zero returns are excluded from both sums (neither profit nor loss)
         let (positive_returns_sum, negative_returns_sum) =
             returns
                 .values()
                 .fold((0.0, 0.0), |(pos_sum, neg_sum), &pnl| {
-                    if pnl >= 0.0 {
+                    if pnl > 0.0 {
                         (pos_sum + pnl, neg_sum)
-                    } else {
+                    } else if pnl < 0.0 {
                         (pos_sum, neg_sum + pnl)
+                    } else {
+                        (pos_sum, neg_sum)
                     }
                 });
 
@@ -86,10 +89,6 @@ impl PortfolioStatistic for ProfitFactor {
         None
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod profit_factor_tests {
@@ -157,7 +156,7 @@ mod profit_factor_tests {
         let returns = create_returns(vec![10.0, 0.0, -20.0, -30.0]);
         let result = profit_factor.calculate_from_returns(&returns);
         assert!(result.is_some());
-        // (10.0 + 0.0) / |-20.0 + -30.0| = 10 / 50 = 0.2
+        // Zero excluded: 10.0 / |-20.0 + -30.0| = 10 / 50 = 0.2
         assert!(approx_eq!(f64, result.unwrap(), 0.2, epsilon = 1e-9));
     }
 

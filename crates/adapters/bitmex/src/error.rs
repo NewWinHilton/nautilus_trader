@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,8 +21,7 @@
 
 use std::time::Duration;
 
-use nautilus_network::http::HttpClientError;
-use reqwest::StatusCode;
+use nautilus_network::http::{HttpClientError, StatusCode};
 use thiserror::Error;
 use tokio_tungstenite::tungstenite;
 

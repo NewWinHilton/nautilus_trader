@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use nautilus_model::{enums::OrderSide, position::Position};
 
@@ -40,7 +40,7 @@ impl LongRatio {
 }
 
 impl Display for LongRatio {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Long Ratio")
     }
 }
@@ -57,12 +57,14 @@ impl PortfolioStatistic for LongRatio {
             return None;
         }
 
-        let longs: Vec<&Position> = positions
+        // Use `entry` (the opening order side) rather than `side` because
+        // closed positions have side == PositionSide::Flat
+        let long_count = positions
             .iter()
-            .filter(|p| matches!(p.entry, OrderSide::Buy))
-            .collect();
+            .filter(|p| p.entry == OrderSide::Buy)
+            .count();
 
-        let value = longs.len() as f64 / positions.len() as f64;
+        let value = long_count as f64 / positions.len() as f64;
 
         let scale = 10f64.powi(self.precision as i32);
         Some((value * scale).round() / scale)
@@ -76,28 +78,26 @@ impl PortfolioStatistic for LongRatio {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
+    use ahash::AHashMap;
     use nautilus_core::{UnixNanos, approx_eq};
     use nautilus_model::{
-        enums::OrderSide,
+        enums::{InstrumentClass, PositionSide},
         identifiers::{
             AccountId, ClientOrderId, PositionId,
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
         },
+        stubs::TestDefault,
         types::{Currency, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
 
-    fn create_test_position(side: OrderSide) -> Position {
+    /// Creates a closed position with the given entry side.
+    /// Closed positions have side == Flat, so we test with `entry` field.
+    fn create_closed_position(entry: OrderSide) -> Position {
         Position {
             events: Vec::new(),
             trader_id: trader_id(),
@@ -105,10 +105,10 @@ mod tests {
             instrument_id: instrument_id_aud_usd_sim(),
             id: PositionId::new("test-position"),
             account_id: AccountId::new("test-account"),
-            opening_order_id: ClientOrderId::default(),
+            opening_order_id: ClientOrderId::test_default(),
             closing_order_id: None,
-            entry: side,
-            side: nautilus_model::enums::PositionSide::NoPositionSide,
+            entry,
+            side: PositionSide::Flat, // Closed positions are Flat
             signed_qty: 0.0,
             quantity: Quantity::default(),
             peak_qty: Quantity::default(),
@@ -122,16 +122,19 @@ mod tests {
             ts_init: UnixNanos::default(),
             ts_opened: UnixNanos::default(),
             ts_last: UnixNanos::default(),
-            ts_closed: None,
+            ts_closed: Some(UnixNanos::from(1)), // Mark as closed
             duration_ns: 2,
             avg_px_open: 0.0,
-            avg_px_close: None,
+            avg_px_close: Some(0.0),
             realized_return: 0.0,
             realized_pnl: None,
             trade_ids: Vec::new(),
             buy_qty: Quantity::default(),
             sell_qty: Quantity::default(),
-            commissions: HashMap::new(),
+            commissions: AHashMap::new(),
+            adjustments: Vec::new(),
+            instrument_class: InstrumentClass::Spot,
+            is_currency_pair: true,
         }
     }
 
@@ -146,9 +149,9 @@ mod tests {
     fn test_all_long_positions() {
         let long_ratio = LongRatio::new(None);
         let positions = vec![
-            create_test_position(OrderSide::Buy),
-            create_test_position(OrderSide::Buy),
-            create_test_position(OrderSide::Buy),
+            create_closed_position(OrderSide::Buy),
+            create_closed_position(OrderSide::Buy),
+            create_closed_position(OrderSide::Buy),
         ];
 
         let result = long_ratio.calculate_from_positions(&positions);
@@ -160,9 +163,9 @@ mod tests {
     fn test_all_short_positions() {
         let long_ratio = LongRatio::new(None);
         let positions = vec![
-            create_test_position(OrderSide::Sell),
-            create_test_position(OrderSide::Sell),
-            create_test_position(OrderSide::Sell),
+            create_closed_position(OrderSide::Sell),
+            create_closed_position(OrderSide::Sell),
+            create_closed_position(OrderSide::Sell),
         ];
 
         let result = long_ratio.calculate_from_positions(&positions);
@@ -174,10 +177,10 @@ mod tests {
     fn test_mixed_positions() {
         let long_ratio = LongRatio::new(None);
         let positions = vec![
-            create_test_position(OrderSide::Buy),
-            create_test_position(OrderSide::Sell),
-            create_test_position(OrderSide::Buy),
-            create_test_position(OrderSide::Sell),
+            create_closed_position(OrderSide::Buy),
+            create_closed_position(OrderSide::Sell),
+            create_closed_position(OrderSide::Buy),
+            create_closed_position(OrderSide::Sell),
         ];
 
         let result = long_ratio.calculate_from_positions(&positions);
@@ -189,9 +192,9 @@ mod tests {
     fn test_custom_precision() {
         let long_ratio = LongRatio::new(Some(3));
         let positions = vec![
-            create_test_position(OrderSide::Buy),
-            create_test_position(OrderSide::Buy),
-            create_test_position(OrderSide::Sell),
+            create_closed_position(OrderSide::Buy),
+            create_closed_position(OrderSide::Buy),
+            create_closed_position(OrderSide::Sell),
         ];
 
         let result = long_ratio.calculate_from_positions(&positions);
@@ -202,7 +205,7 @@ mod tests {
     #[rstest]
     fn test_single_position_long() {
         let long_ratio = LongRatio::new(None);
-        let positions = vec![create_test_position(OrderSide::Buy)];
+        let positions = vec![create_closed_position(OrderSide::Buy)];
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
@@ -212,7 +215,7 @@ mod tests {
     #[rstest]
     fn test_single_position_short() {
         let long_ratio = LongRatio::new(None);
-        let positions = vec![create_test_position(OrderSide::Sell)];
+        let positions = vec![create_closed_position(OrderSide::Sell)];
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
@@ -223,9 +226,9 @@ mod tests {
     fn test_zero_precision() {
         let long_ratio = LongRatio::new(Some(0));
         let positions = vec![
-            create_test_position(OrderSide::Buy),
-            create_test_position(OrderSide::Buy),
-            create_test_position(OrderSide::Sell),
+            create_closed_position(OrderSide::Buy),
+            create_closed_position(OrderSide::Buy),
+            create_closed_position(OrderSide::Sell),
         ];
 
         let result = long_ratio.calculate_from_positions(&positions);

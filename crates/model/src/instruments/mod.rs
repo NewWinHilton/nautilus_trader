@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -399,12 +399,12 @@ pub trait Instrument: 'static + Send {
             last_price.as_f64().is_finite(),
             "non-finite price passed to calculate_base_quantity",
         )?;
-        let quantity_decimal = Decimal::from_f64_retain(quantity.as_f64()).ok_or_else(|| {
+        let quantity_dec = Decimal::from_f64_retain(quantity.as_f64()).ok_or_else(|| {
             anyhow::anyhow!("non-finite quantity passed to calculate_base_quantity")
         })?;
-        let price_decimal = Decimal::from_f64_retain(last_price.as_f64())
+        let price_dec = Decimal::from_f64_retain(last_price.as_f64())
             .ok_or_else(|| anyhow::anyhow!("non-finite price passed to calculate_base_quantity"))?;
-        let value_decimal = (quantity_decimal / price_decimal).round_dp_with_strategy(
+        let value_decimal = (quantity_dec / price_dec).round_dp_with_strategy(
             self.size_precision().into(),
             RoundingStrategy::MidpointNearestEven,
         );
@@ -538,16 +538,12 @@ price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_mai
     }
 }
 
-pub const EXPIRING_INSTRUMENT_TYPES: [InstrumentClass; 4] = [
+pub const EXPIRING_INSTRUMENT_CLASSES: [InstrumentClass; 4] = [
     InstrumentClass::Future,
     InstrumentClass::FuturesSpread,
     InstrumentClass::Option,
     InstrumentClass::OptionSpread,
 ];
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

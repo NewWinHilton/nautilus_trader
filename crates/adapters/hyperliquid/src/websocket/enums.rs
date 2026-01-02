@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,6 +39,12 @@ pub enum HyperliquidWsChannel {
     L2Book,
     #[serde(rename = "bbo")]
     Bbo,
+    #[serde(rename = "candle")]
+    Candle,
+    #[serde(rename = "allMids")]
+    AllMids,
+    #[serde(rename = "notification")]
+    Notification,
     #[serde(rename = "orderUpdates")]
     OrderUpdates,
     #[serde(rename = "userEvents")]
@@ -53,6 +59,8 @@ pub enum HyperliquidWsChannel {
     Post,
     #[serde(rename = "pong")]
     Pong,
+    #[serde(rename = "error")]
+    Error,
 }
 
 impl HyperliquidWsChannel {
@@ -63,6 +71,9 @@ impl HyperliquidWsChannel {
             Self::Trades => "trades",
             Self::L2Book => "l2Book",
             Self::Bbo => "bbo",
+            Self::Candle => "candle",
+            Self::AllMids => "allMids",
+            Self::Notification => "notification",
             Self::OrderUpdates => "orderUpdates",
             Self::UserEvents => "userEvents",
             Self::UserFills => "userFills",
@@ -70,6 +81,7 @@ impl HyperliquidWsChannel {
             Self::UserNonFundingLedgerUpdates => "userNonFundingLedgerUpdates",
             Self::Post => "post",
             Self::Pong => "pong",
+            Self::Error => "error",
         }
     }
 
@@ -77,7 +89,15 @@ impl HyperliquidWsChannel {
     pub fn is_public(&self) -> bool {
         matches!(
             self,
-            Self::SubscriptionResponse | Self::Trades | Self::L2Book | Self::Bbo | Self::Pong
+            Self::SubscriptionResponse
+                | Self::Trades
+                | Self::L2Book
+                | Self::Bbo
+                | Self::Candle
+                | Self::AllMids
+                | Self::Notification
+                | Self::Pong
+                | Self::Error
         )
     }
 
@@ -86,10 +106,6 @@ impl HyperliquidWsChannel {
         !self.is_public()
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -179,10 +195,13 @@ mod tests {
         use strum::IntoEnumIterator;
 
         let channels: Vec<HyperliquidWsChannel> = HyperliquidWsChannel::iter().collect();
-        assert_eq!(channels.len(), 11);
+        assert_eq!(channels.len(), 15);
         assert!(channels.contains(&HyperliquidWsChannel::Trades));
         assert!(channels.contains(&HyperliquidWsChannel::L2Book));
         assert!(channels.contains(&HyperliquidWsChannel::UserFills));
+        assert!(channels.contains(&HyperliquidWsChannel::Candle));
+        assert!(channels.contains(&HyperliquidWsChannel::AllMids));
+        assert!(channels.contains(&HyperliquidWsChannel::Notification));
     }
 
     #[rstest]

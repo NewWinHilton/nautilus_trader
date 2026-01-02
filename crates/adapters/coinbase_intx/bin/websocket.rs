@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Cache instruments first (required for correct websocket message parsing)
     let instruments = client.request_instruments().await?;
     let mut client = CoinbaseIntxWebSocketClient::default();
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
 
     client.connect().await?;
 

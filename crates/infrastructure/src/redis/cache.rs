@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,8 +24,8 @@ use nautilus_common::{
     },
     custom::CustomData,
     enums::SerializationEncoding,
+    live::get_runtime,
     logging::{log_task_awaiting, log_task_started, log_task_stopped},
-    runtime::get_runtime,
     signal::Signal,
 };
 use nautilus_core::{UUID4, UnixNanos, correctness::check_slice_not_empty};
@@ -45,10 +45,9 @@ use nautilus_model::{
     types::Currency,
 };
 use redis::{Pipeline, aio::ConnectionManager};
-use tokio::try_join;
 use ustr::Ustr;
 
-use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
+use super::{REDIS_DELIMITER, REDIS_FLUSHDB, get_index_key};
 use crate::redis::{create_redis_connection, queries::DatabaseQueries};
 
 // Task and connection names
@@ -176,6 +175,7 @@ impl RedisCacheDatabase {
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
         let encoding = config.encoding;
+
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
                 log::error!("Error in task '{CACHE_PROCESS}': {e}");
@@ -792,23 +792,15 @@ fn get_collection_key(key: &str) -> anyhow::Result<&str> {
         })
 }
 
-fn get_index_key(key: &str) -> anyhow::Result<&str> {
-    key.split_once(REDIS_DELIMITER)
-        .map(|(_, index_key)| index_key)
-        .ok_or_else(|| {
-            anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
-        })
-}
-
-#[allow(dead_code, reason = "Under development")]
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct RedisCacheDatabaseAdapter {
     pub encoding: SerializationEncoding,
     pub database: RedisCacheDatabase,
 }
 
-#[allow(dead_code, reason = "Under development")]
-#[allow(unused, reason = "Under development")]
+#[allow(dead_code)]
+#[allow(unused)]
 #[async_trait::async_trait]
 impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()> {
@@ -833,7 +825,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             positions,
             greeks,
             yield_curves,
-        ) = try_join!(
+        ) = tokio::try_join!(
             self.load_currencies(),
             self.load_instruments(),
             self.load_synthetics(),
@@ -1230,9 +1222,6 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -1263,17 +1252,5 @@ mod tests {
     fn test_get_collection_key_invalid() {
         let key = "no_delimiter";
         assert!(get_collection_key(key).is_err());
-    }
-
-    #[rstest]
-    fn test_get_index_key_valid() {
-        let key = "index:123";
-        assert_eq!(get_index_key(key).unwrap(), "123");
-    }
-
-    #[rstest]
-    fn test_get_index_key_invalid() {
-        let key = "no_delimiter";
-        assert!(get_index_key(key).is_err());
     }
 }

@@ -19,11 +19,6 @@
 
 #define DEPTH10_LEN 10
 
-/**
- * The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
- */
-#define TRADE_ID_LEN 37
-
 #if defined(HIGH_PRECISION)
 /**
  * The maximum fixed-point precision.
@@ -305,6 +300,10 @@ typedef enum AccountType {
      * An account specific to betting markets.
      */
     BETTING = 3,
+    /**
+     * An account which represents a blockchain wallet,
+     */
+    WALLET = 4,
 } AccountType;
 
 /**
@@ -391,7 +390,6 @@ typedef enum InstrumentClass {
     SPORTS_BETTING = 11,
     /**
      * A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
-     * A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
      */
     BINARY_OPTION = 12,
 } InstrumentClass;
@@ -749,6 +747,20 @@ typedef enum PositionSide {
      */
     SHORT = 3,
 } PositionSide;
+
+/**
+ * The type of position adjustment.
+ */
+typedef enum PositionAdjustmentType {
+    /**
+     * Commission adjustment affecting position quantity.
+     */
+    COMMISSION = 1,
+    /**
+     * Funding payment affecting position realized PnL.
+     */
+    FUNDING = 2,
+} PositionAdjustmentType;
 
 /**
  * A record flag bit field, indicating event end and data information.
@@ -1199,10 +1211,7 @@ typedef struct QuoteTick_t {
  * Maximum length is 36 characters.
  */
 typedef struct TradeId_t {
-    /**
-     * The trade match ID value as a fixed-length C string byte array (includes null terminator).
-     */
-    uint8_t value[TRADE_ID_LEN];
+    StackStr _0;
 } TradeId_t;
 
 /**
@@ -2120,6 +2129,11 @@ struct InstrumentId_t orderbook_deltas_instrument_id(const struct OrderBookDelta
 
 CVec orderbook_deltas_vec_deltas(const struct OrderBookDeltas_API *deltas);
 
+/**
+ * Returns `1` if the first delta is a `Clear` action (snapshot), `0` otherwise.
+ *
+ * Returns `0` for empty delta vectors to avoid panicking on malformed FFI input.
+ */
 uint8_t orderbook_deltas_is_snapshot(const struct OrderBookDeltas_API *deltas);
 
 uint8_t orderbook_deltas_flags(const struct OrderBookDeltas_API *deltas);
@@ -2130,6 +2144,13 @@ uint64_t orderbook_deltas_ts_event(const struct OrderBookDeltas_API *deltas);
 
 uint64_t orderbook_deltas_ts_init(const struct OrderBookDeltas_API *deltas);
 
+/**
+ * Drops a `CVec` of `OrderBookDelta` values.
+ *
+ * # Panics
+ *
+ * Panics if `CVec` invariants are violated (corrupted metadata).
+ */
 void orderbook_deltas_vec_drop(CVec v);
 
 /**
@@ -2554,6 +2575,21 @@ const char *position_side_to_cstr(enum PositionSide value);
  */
 enum PositionSide position_side_from_cstr(const char *ptr);
 
+const char *position_adjustment_type_to_cstr(enum PositionAdjustmentType value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ *
+ * Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `PositionAdjustmentType` variant.
+ */
+enum PositionAdjustmentType position_adjustment_type_from_cstr(const char *ptr);
+
 const char *price_type_to_cstr(enum PriceType value);
 
 /**
@@ -2968,8 +3004,7 @@ uint64_t synthetic_instrument_ts_init(const struct SyntheticInstrument_API *synt
  *
  * Assumes `formula_ptr` is a valid C string pointer.
  */
-uint8_t synthetic_instrument_is_valid_formula(const struct SyntheticInstrument_API *synth,
-                                              const char *formula_ptr);
+uint8_t synthetic_instrument_is_valid_formula(const char *formula_ptr, const char *components_ptr);
 
 /**
  * # Safety
@@ -3110,6 +3145,11 @@ void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeT
 
 CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t order);
 
+CVec orderbook_get_all_crossed_levels(const struct OrderBook_API *book,
+                                      enum OrderSide order_side,
+                                      struct Price_t price,
+                                      uint8_t size_precision);
+
 uint8_t orderbook_check_integrity(const struct OrderBook_API *book);
 
 void vec_drop_fills(CVec v);
@@ -3135,8 +3175,22 @@ double level_size(const struct BookLevel_API *level);
 
 double level_exposure(const struct BookLevel_API *level);
 
+/**
+ * Drops a `CVec` of `BookLevel_API` values.
+ *
+ * # Panics
+ *
+ * Panics if `CVec` invariants are violated (corrupted metadata).
+ */
 void vec_drop_book_levels(CVec v);
 
+/**
+ * Drops a `CVec` of `BookOrder` values.
+ *
+ * # Panics
+ *
+ * Panics if `CVec` invariants are violated (corrupted metadata).
+ */
 void vec_drop_book_orders(CVec v);
 
 /**

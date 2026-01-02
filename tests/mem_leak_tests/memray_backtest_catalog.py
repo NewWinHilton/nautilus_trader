@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -104,7 +104,7 @@ if __name__ == "__main__":
                         "bar_type": "AUD/USD.SIM-15-MINUTE-BID-INTERNAL",
                         "fast_ema_period": 10,
                         "slow_ema_period": 20,
-                        "trade_size": Decimal("100_000"),
+                        "trade_size": Decimal(100_000),
                     },
                 ),
             ]

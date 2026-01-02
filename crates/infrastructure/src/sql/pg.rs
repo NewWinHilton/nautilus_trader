@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -221,7 +221,7 @@ pub async fn init_postgres(
         Regex::new(r"\$\$ LANGUAGE plpgsql(?:[ \t\r\n]+SECURITY[ \t\r\n]+DEFINER)?;")?;
     for file_name in &sql_files {
         log::info!("Executing schema file: {file_name:?}");
-        let file_path = format!("{}/{}", schema_dir, file_name);
+        let file_path = format!("{schema_dir}/{file_name}");
         let sql_content = std::fs::read_to_string(&file_path)?;
         let sql_statements: Vec<String> = match *file_name {
             "functions.sql" | "partitions.sql" => {

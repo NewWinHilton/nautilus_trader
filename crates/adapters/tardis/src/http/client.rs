@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{env, time::Duration};
+use std::{env, fmt::Debug, time::Duration};
 
 use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT};
+use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::instruments::InstrumentAny;
 use reqwest::Response;
 
@@ -27,7 +28,7 @@ use super::{
     parse::parse_instrument_any,
     query::InstrumentFilter,
 };
-use crate::enums::TardisExchange;
+use crate::{common::credential::Credential, enums::TardisExchange};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -35,14 +36,27 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// See <https://docs.tardis.dev/api/http>.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis")
 )]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TardisHttpClient {
     base_url: String,
-    api_key: String,
+    credential: Option<Credential>,
     client: reqwest::Client,
     normalize_symbols: bool,
+}
+
+impl Debug for TardisHttpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TardisHttpClient")
+            .field("base_url", &self.base_url)
+            .field(
+                "credential",
+                &self.credential.as_ref().map(|_| "<redacted>"),
+            )
+            .field("normalize_symbols", &self.normalize_symbols)
+            .finish()
+    }
 }
 
 impl TardisHttpClient {
@@ -58,18 +72,21 @@ impl TardisHttpClient {
         timeout_secs: Option<u64>,
         normalize_symbols: bool,
     ) -> anyhow::Result<Self> {
-        let api_key = match api_key {
-            Some(key) => key.to_string(),
-            None => env::var("TARDIS_API_KEY").map_err(|_| {
-                anyhow::anyhow!(
-                    "API key must be provided or set in the 'TARDIS_API_KEY' environment variable"
-                )
-            })?,
+        let credential = match api_key {
+            Some(key) => Some(Credential::new(key)),
+            None => env::var("TARDIS_API_KEY").ok().map(Credential::new),
         };
+
+        if credential.is_none() {
+            anyhow::bail!(
+                "API key must be provided or set in the 'TARDIS_API_KEY' environment variable"
+            );
+        }
 
         let base_url = base_url.map_or_else(|| TARDIS_BASE_URL.to_string(), ToString::to_string);
         let timeout = timeout_secs.map_or_else(|| Duration::from_secs(60), Duration::from_secs);
 
+        install_cryptographic_provider();
         let client = reqwest::Client::builder()
             .user_agent(NAUTILUS_USER_AGENT)
             .timeout(timeout)
@@ -77,10 +94,16 @@ impl TardisHttpClient {
 
         Ok(Self {
             base_url,
-            api_key,
+            credential,
             client,
             normalize_symbols,
         })
+    }
+
+    /// Returns the credential associated with this client.
+    #[must_use]
+    pub const fn credential(&self) -> Option<&Credential> {
+        self.credential.as_ref()
     }
 
     async fn handle_error_response<T>(resp: Response) -> Result<T> {
@@ -135,7 +158,7 @@ impl TardisHttpClient {
         let resp = self
             .client
             .get(url)
-            .bearer_auth(&self.api_key)
+            .bearer_auth(self.credential.as_ref().map_or("", |c| c.api_key()))
             .send()
             .await?;
         tracing::debug!("Response status: {}", resp.status());

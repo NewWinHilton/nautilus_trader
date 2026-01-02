@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,6 +36,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
 
 
 class DataTesterConfig(ActorConfig, frozen=True):
@@ -64,6 +65,7 @@ class DataTesterConfig(ActorConfig, frozen=True):
     request_quotes: bool = False
     request_trades: bool = False
     request_bars: bool = False
+    request_book_snapshot: bool = False
     request_params: dict[str, Any] | None = None
     requests_start_delta: pd.Timedelta | None = None
     book_type: BookType = BookType.L2_MBP
@@ -217,6 +219,14 @@ class DataTester(Actor):
                     params=self.config.request_params,
                 )
 
+            if self.config.request_book_snapshot:
+                self.request_order_book_snapshot(
+                    instrument_id=instrument_id,
+                    limit=self.config.book_depth or 0,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
+
         for bar_type in self.config.bar_types or []:
             if self.config.subscribe_bars:
                 self.subscribe_bars(
@@ -342,6 +352,22 @@ class DataTester(Actor):
         """
         if self.config.log_data:
             self.log.info("Historical " + repr(data), LogColor.CYAN)
+
+    def on_instrument(self, instrument: Instrument) -> None:
+        """
+        Actions to be performed when the actor receives an instrument.
+        """
+        if self.config.log_data:
+            self.log.info(repr(instrument), LogColor.CYAN)
+
+    def on_instruments(self, instruments: list[Instrument]) -> None:
+        """
+        Actions to be performed when the actor receives multiple instruments.
+        """
+        if self.config.log_data:
+            self.log.info(f"Received <Instrument[{len(instruments)}]> data", LogColor.CYAN)
+            for instrument in instruments:
+                self.log.info(repr(instrument), LogColor.CYAN)
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """

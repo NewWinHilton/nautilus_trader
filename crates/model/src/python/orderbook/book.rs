@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,8 +12,6 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
-use std::collections::HashSet;
 
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -134,17 +132,18 @@ impl OrderBook {
 
     #[pyo3(name = "apply_delta")]
     fn py_apply_delta(&mut self, delta: &OrderBookDelta) -> PyResult<()> {
-        self.apply_delta(delta).map_err(to_pyruntime_err)
+        self.apply_delta_unchecked(delta).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "apply_deltas")]
     fn py_apply_deltas(&mut self, deltas: &OrderBookDeltas) -> PyResult<()> {
-        self.apply_deltas(deltas).map_err(to_pyruntime_err)
+        self.apply_deltas_unchecked(deltas)
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "apply_depth")]
-    fn py_apply_depth(&mut self, depth: &OrderBookDepth10) {
-        self.apply_depth(depth);
+    fn py_apply_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
+        self.apply_depth_unchecked(depth).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "check_integrity")]
@@ -206,11 +205,17 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.bids_filtered_as_map(depth, own_book, status, accepted_buffer_ns, ts_now)
+        self.bids_filtered_as_map(
+            depth,
+            own_book,
+            status.map(|s| s.into_iter().collect()),
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
     #[pyo3(name = "asks_filtered_to_dict")]
@@ -219,11 +224,17 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, ts_now)
+        self.asks_filtered_as_map(
+            depth,
+            own_book,
+            status.map(|s| s.into_iter().collect()),
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
     #[pyo3(name = "group_bids_filtered")]
@@ -233,7 +244,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -241,7 +252,7 @@ impl OrderBook {
             group_size,
             depth,
             own_book,
-            status,
+            status.map(|s| s.into_iter().collect()),
             accepted_buffer_ns,
             ts_now,
         )
@@ -254,7 +265,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -262,7 +273,7 @@ impl OrderBook {
             group_size,
             depth,
             own_book,
-            status,
+            status.map(|s| s.into_iter().collect()),
             accepted_buffer_ns,
             ts_now,
         )

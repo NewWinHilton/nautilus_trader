@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,12 +17,8 @@ import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 from random import randint
-from typing import Generic, TypeVar
 
 from nautilus_trader.common.component import Logger
-
-
-T = TypeVar("T")
 
 
 def get_exponential_backoff(
@@ -66,7 +62,7 @@ def get_exponential_backoff(
     return delay
 
 
-class RetryManager(Generic[T]):
+class RetryManager[T]:
     """
     Provides retry state management for an HTTP request.
 
@@ -243,7 +239,7 @@ class RetryManager(Generic[T]):
         return self.details_str
 
 
-class RetryManagerPool(Generic[T]):
+class RetryManagerPool[T]:
     """
     Provides a pool of `RetryManager`s.
 

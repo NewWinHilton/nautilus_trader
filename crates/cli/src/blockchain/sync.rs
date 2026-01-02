@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,9 @@ use nautilus_blockchain::{
     config::BlockchainDataClientConfig,
     data::core::BlockchainDataClientCore,
     exchanges::{find_dex_type_case_insensitive, get_supported_dexes_for_chain},
+    rpc::providers::check_infura_rpc_provider,
 };
+use nautilus_core::string::mask_api_key;
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
 use nautilus_model::defi::chain::Chain;
 
@@ -34,7 +36,7 @@ pub async fn run_sync_dex(
     multicall_calls_per_rpc_request: Option<u32>,
 ) -> anyhow::Result<()> {
     let chain = Chain::from_chain_name(&chain)
-        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
+        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {chain}"))?;
 
     let dex_type = find_dex_type_case_insensitive(&dex, chain).ok_or_else(|| {
         let supported_dexes = get_supported_dexes_for_chain(chain.name);
@@ -52,18 +54,32 @@ pub async fn run_sync_dex(
         database.password,
         database.database,
     );
-    // Get RPC HTTP URL from CLI argument or environment variable
+    // Get RPC HTTP URL: CLI arg, Infura provider, OR RPC_HTTP_URL env var
     let rpc_http_url = rpc_url
+        .or_else(|| check_infura_rpc_provider(&chain.name))
         .or_else(|| std::env::var("RPC_HTTP_URL").ok())
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            panic!(
+                "No RPC URL provided for {name}. Set --rpc-url, INFURA_API_KEY, or RPC_HTTP_URL",
+                name = chain.name
+            )
+        });
 
-    log::info!("Using RPC HTTP URL: '{rpc_http_url}'");
+    // Mask potential API key in URL for logging (key is typically the last path segment)
+    let masked_url = if let Some(idx) = rpc_http_url.rfind('/') {
+        let (base, key) = rpc_http_url.split_at(idx + 1);
+        if key.is_empty() {
+            rpc_http_url.clone()
+        } else {
+            let masked_key = mask_api_key(key);
+            format!("{base}{masked_key}")
+        }
+    } else {
+        // URL without path separator - mask entirely as it may contain credentials
+        mask_api_key(&rpc_http_url)
+    };
 
-    if rpc_http_url.is_empty() {
-        log::warn!(
-            "No RPC HTTP URL provided via --rpc-url or RPC_HTTP_URL environment variable - some operations may fail"
-        );
-    }
+    log::info!("Using RPC HTTP URL: '{masked_url}'");
 
     let config = BlockchainDataClientConfig::new(
         Arc::new(chain.to_owned()),
@@ -85,12 +101,12 @@ pub async fn run_sync_dex(
     data_client
         .register_dex_exchange(dex_type)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {e}"))?;
     // We want to have full pool sync, so from 0 to last.
     data_client
         .sync_exchange_pools(&dex_type, 0, None, reset)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to sync pools: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to sync pools: {e}"))?;
 
     Ok(())
 }
@@ -102,7 +118,7 @@ pub async fn run_sync_blocks(
     database: DatabaseConfig,
 ) -> anyhow::Result<()> {
     let chain = Chain::from_chain_name(&chain)
-        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
+        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {chain}"))?;
     let chain = Arc::new(chain.to_owned());
     let from_block = from_block.unwrap_or(0);
 
@@ -116,7 +132,7 @@ pub async fn run_sync_blocks(
     let config = BlockchainDataClientConfig::new(
         chain.clone(),
         vec![],
-        "".to_string(), // we dont need to http rpc url for block syncing
+        String::new(), // we dont need to http rpc url for block syncing
         None,
         None,
         None,
@@ -133,7 +149,7 @@ pub async fn run_sync_blocks(
     data_client
         .sync_blocks_checked(from_block, to_block)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to sync blocks: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to sync blocks: {e}"))?;
 
     Ok(())
 }

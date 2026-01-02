@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -75,8 +75,13 @@ impl TardisInstrumentMiniInfo {
     }
 }
 
-#[must_use]
+/// Converts a bar specification to a Tardis trade bar string.
+///
+/// # Errors
+///
+/// Returns an error if the bar specification cannot be converted to a Tardis format.
 #[pyfunction(name = "bar_spec_to_tardis_trade_bar_string")]
-pub fn py_bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> String {
+pub fn py_bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> PyResult<String> {
     bar_spec_to_tardis_trade_bar_string(bar_spec)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
 }

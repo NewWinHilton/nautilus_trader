@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,6 +18,35 @@ use std::cmp::Ord;
 use alloy_primitives::U256;
 
 use crate::defi::tick_map::liquidity_math::liquidity_math_add;
+
+/// Snapshot of a tick boundary crossing during a swap simulation.
+///
+/// This structure captures the state of a tick crossing event, including
+/// the tick value, crossing direction, and fee growth state at the moment
+/// of crossing.
+#[derive(Debug, Clone)]
+pub struct CrossedTick {
+    /// The tick value that was crossed.
+    pub tick: i32,
+    /// Direction of crossing: `true` for token0→token1, `false` for token1→token0.
+    pub zero_for_one: bool,
+    /// Global fee growth for token0 at the moment of crossing (Q128.128 format).
+    pub fee_growth_0: U256,
+    /// Global fee growth for token1 at the moment of crossing (Q128.128 format).
+    pub fee_growth_1: U256,
+}
+
+impl CrossedTick {
+    /// Creates a new tick crossing snapshot.
+    pub fn new(tick: i32, zero_for_one: bool, fee_growth_0: U256, fee_growth_1: U256) -> Self {
+        Self {
+            tick,
+            zero_for_one,
+            fee_growth_0,
+            fee_growth_1,
+        }
+    }
+}
 
 /// Represents a tick in a Uniswap V3-style AMM with liquidity tracking and fee accounting.
 #[cfg_attr(
@@ -129,10 +158,6 @@ impl PoolTick {
         (Self::MIN_TICK / tick_spacing) * tick_spacing
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -252,7 +277,7 @@ mod tests {
             let min_tick = PoolTick::get_min_tick(spacing);
 
             // Should be symmetric (max = -min)
-            assert_eq!(max_tick, -min_tick, "Asymmetry for spacing {}", spacing);
+            assert_eq!(max_tick, -min_tick, "Asymmetry for spacing {spacing}");
 
             // Both should be divisible by spacing
             assert_eq!(max_tick % spacing, 0);

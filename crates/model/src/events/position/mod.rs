@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,19 +14,21 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::{
-    events::{PositionChanged, PositionClosed, PositionOpened},
+    events::{PositionAdjusted, PositionChanged, PositionClosed, PositionOpened},
     identifiers::{AccountId, InstrumentId},
 };
+pub mod adjusted;
 pub mod changed;
 pub mod closed;
 pub mod opened;
 pub mod snapshot;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PositionEvent {
     PositionOpened(PositionOpened),
     PositionChanged(PositionChanged),
     PositionClosed(PositionClosed),
+    PositionAdjusted(PositionAdjusted),
 }
 
 impl PositionEvent {
@@ -35,6 +37,7 @@ impl PositionEvent {
             Self::PositionOpened(position) => position.instrument_id,
             Self::PositionChanged(position) => position.instrument_id,
             Self::PositionClosed(position) => position.instrument_id,
+            Self::PositionAdjusted(adjustment) => adjustment.instrument_id,
         }
     }
 
@@ -43,13 +46,11 @@ impl PositionEvent {
             Self::PositionOpened(position) => position.account_id,
             Self::PositionChanged(position) => position.account_id,
             Self::PositionClosed(position) => position.account_id,
+            Self::PositionAdjusted(adjustment) => adjustment.account_id,
         }
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;

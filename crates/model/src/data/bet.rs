@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -146,6 +146,7 @@ impl Bet {
     }
 
     /// Creates a hedging bet for a given price.
+    #[must_use]
     pub fn hedging_bet(&self, price: Decimal) -> Self {
         Self::new(price, self.hedging_stake(price), self.side.opposite())
     }
@@ -376,9 +377,6 @@ pub fn inverse_probability_to_bet(
     probability_to_bet(inverse_probability, volume, inverse_side)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -421,8 +421,6 @@ class TestBarSpecification:
             BarAggregation.TICK_RUNS,
             BarAggregation.VOLUME_RUNS,
             BarAggregation.VALUE_RUNS,
-            BarAggregation.MONTH,
-            BarAggregation.YEAR,
         ],
     )
     def test_get_interval_ns_and_timedelta_non_time_aggregations_raise_error(
@@ -433,15 +431,43 @@ class TestBarSpecification:
         spec = BarSpecification(1, aggregation, PriceType.LAST)
 
         # Act & Assert
-        if aggregation in [BarAggregation.MONTH, BarAggregation.YEAR]:
-            match = f"get_interval_ns not supported for the `BarAggregation.{aggregation.name}` aggregation"
-        else:
-            match = "Aggregation not time based"
+        match = "Aggregation not time based"
 
         with pytest.raises(ValueError, match=match):
             spec.get_interval_ns()
         with pytest.raises(ValueError, match=match):
             spec.timedelta
+
+    @pytest.mark.parametrize(
+        ("step", "aggregation", "expected_timedelta"),
+        [
+            # MONTH aggregations - returns proxy value (30 days)
+            (1, BarAggregation.MONTH, pd.Timedelta(days=30)),
+            (2, BarAggregation.MONTH, pd.Timedelta(days=60)),
+            (3, BarAggregation.MONTH, pd.Timedelta(days=90)),
+            # YEAR aggregations - returns proxy value (365 days)
+            (1, BarAggregation.YEAR, pd.Timedelta(days=365)),
+            (2, BarAggregation.YEAR, pd.Timedelta(days=730)),
+        ],
+    )
+    def test_get_interval_ns_and_timedelta_month_year_proxy_values(
+        self,
+        step: int,
+        aggregation: BarAggregation,
+        expected_timedelta: pd.Timedelta,
+    ):
+        # Arrange
+        spec = BarSpecification(step, aggregation, PriceType.LAST)
+
+        # Act
+        actual_ns = spec.get_interval_ns()
+        actual_timedelta = spec.timedelta
+
+        # Assert
+        assert actual_ns == expected_timedelta.value
+        assert actual_timedelta == expected_timedelta
+        # Verify consistency between methods
+        assert actual_timedelta == pd.Timedelta(nanoseconds=actual_ns)
 
     def test_properties(self):
         # Arrange, Act
@@ -639,6 +665,36 @@ class TestBarType:
         assert bar_type.instrument_id == instrument_id
         assert bar_type.spec == bar_spec
         assert bar_type.aggregation_source == AggregationSource.EXTERNAL
+
+    def test_id_spec_key_ignores_aggregation_source(self):
+        # Arrange
+        bar_type_external = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
+        bar_type_internal = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-INTERNAL")
+
+        # Act
+        key_external = bar_type_external.id_spec_key()
+        key_internal = bar_type_internal.id_spec_key()
+
+        # Assert: full equality should differ
+        assert bar_type_external != bar_type_internal
+
+        # Assert: id_spec_key should be the same
+        assert key_external == key_internal
+
+        # Assert: tuple components are correct
+        assert key_external == (bar_type_external.instrument_id, bar_type_external.spec)
+
+    def test_id_spec_key_can_be_used_as_dict_key(self):
+        # Arrange
+        bar_type_external = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
+        bar_type_internal = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-INTERNAL")
+        lookup: dict[tuple, str] = {}
+
+        # Act: register with external bar type
+        lookup[bar_type_external.id_spec_key()] = "registered"
+
+        # Assert: lookup with internal bar type should find it
+        assert lookup.get(bar_type_internal.id_spec_key()) == "registered"
 
 
 class TestBar:

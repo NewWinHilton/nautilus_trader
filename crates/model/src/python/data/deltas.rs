@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -109,10 +109,11 @@ impl OrderBookDeltas {
     #[allow(unsafe_code)]
     pub fn py_from_pycapsule(capsule: Bound<'_, PyAny>) -> Self {
         let capsule: &Bound<'_, PyCapsule> = capsule
-            .downcast::<PyCapsule>()
+            .cast::<PyCapsule>()
             .expect("Error on downcast to `&PyCapsule`");
-        let data: &OrderBookDeltas_API =
-            unsafe { &*(capsule.pointer() as *const OrderBookDeltas_API) };
+        let data: &OrderBookDeltas_API = unsafe {
+            &*(capsule.pointer_checked(None).unwrap().as_ptr() as *const OrderBookDeltas_API)
+        };
         data.deref().clone()
     }
 

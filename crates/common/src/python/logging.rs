@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use log::LevelFilter;
 use nautilus_core::{UUID4, python::to_pyvalue_err};
 use nautilus_model::identifiers::TraderId;
@@ -107,7 +106,7 @@ pub fn py_init_logging(
     instance_id: UUID4,
     level_stdout: LogLevel,
     level_file: Option<LogLevel>,
-    component_levels: Option<HashMap<String, String>>,
+    component_levels: Option<std::collections::HashMap<String, String>>,
     directory: Option<String>,
     file_name: Option<String>,
     file_format: Option<String>,
@@ -146,11 +145,11 @@ pub fn py_logger_flush() {
 }
 
 fn parse_component_levels(
-    original_map: Option<HashMap<String, String>>,
-) -> anyhow::Result<HashMap<Ustr, LevelFilter>> {
+    original_map: Option<std::collections::HashMap<String, String>>,
+) -> anyhow::Result<AHashMap<Ustr, LevelFilter>> {
     match original_map {
         Some(map) => {
-            let mut new_map = HashMap::new();
+            let mut new_map = AHashMap::new();
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
                 let level = parse_level_filter_str(&value)?;
@@ -158,7 +157,7 @@ fn parse_component_levels(
             }
             Ok(new_map)
         }
-        None => Ok(HashMap::new()),
+        None => Ok(AHashMap::new()),
     }
 }
 

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use arrow::record_batch::RecordBatch;
 use object_store::{ObjectStore, path::Path as ObjectPath};
 use parquet::{
@@ -34,7 +35,7 @@ use parquet::{
 pub async fn write_batch_to_parquet(
     batch: RecordBatch,
     path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
 ) -> anyhow::Result<()> {
@@ -56,7 +57,7 @@ pub async fn write_batch_to_parquet(
 pub async fn write_batches_to_parquet(
     batches: &[RecordBatch],
     path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
 ) -> anyhow::Result<()> {
@@ -117,7 +118,7 @@ pub async fn write_batches_to_object_store(
 pub async fn combine_parquet_files(
     file_paths: Vec<&str>,
     new_file_path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
 ) -> anyhow::Result<()> {
@@ -217,7 +218,7 @@ pub async fn combine_parquet_files_from_object_store(
 /// Panics if the Parquet metadata's min/max unwrap operations fail unexpectedly.
 pub async fn min_max_from_parquet_metadata(
     file_path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
     column_name: &str,
 ) -> anyhow::Result<(u64, u64)> {
     let (object_store, base_path, _) = create_object_store_from_path(file_path, storage_options)?;
@@ -319,21 +320,38 @@ pub async fn min_max_from_parquet_metadata_object_store(
 ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
 ///
 /// Returns a tuple of (`ObjectStore`, `base_path`, `normalized_uri`)
+#[allow(unused_variables)]
 pub fn create_object_store_from_path(
     path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let uri = normalize_path_to_uri(path);
 
     match uri.as_str() {
+        #[cfg(feature = "cloud")]
         s if s.starts_with("s3://") => create_s3_store(&uri, storage_options),
+        #[cfg(feature = "cloud")]
         s if s.starts_with("gs://") || s.starts_with("gcs://") => {
             create_gcs_store(&uri, storage_options)
         }
+        #[cfg(feature = "cloud")]
         s if s.starts_with("az://") => create_azure_store(&uri, storage_options),
+        #[cfg(feature = "cloud")]
         s if s.starts_with("abfs://") => create_abfs_store(&uri, storage_options),
+        #[cfg(feature = "cloud")]
         s if s.starts_with("http://") || s.starts_with("https://") => {
             create_http_store(&uri, storage_options)
+        }
+        #[cfg(not(feature = "cloud"))]
+        s if s.starts_with("s3://")
+            || s.starts_with("gs://")
+            || s.starts_with("gcs://")
+            || s.starts_with("az://")
+            || s.starts_with("abfs://")
+            || s.starts_with("http://")
+            || s.starts_with("https://") =>
+        {
+            anyhow::bail!("Cloud storage support requires the 'cloud' feature: {uri}")
         }
         s if s.starts_with("file://") => create_local_store(&uri, true),
         _ => create_local_store(&uri, false), // Fallback: assume local path
@@ -436,10 +454,11 @@ fn create_local_store(
     Ok((Arc::new(local_store), String::new(), uri.to_string()))
 }
 
-/// Helper function to create S3 object store with options
+/// Helper function to create S3 object store with options.
+#[cfg(feature = "cloud")]
 fn create_s3_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, path) = parse_url_and_path(uri)?;
     let bucket = extract_host(&url, "Invalid S3 URI: missing bucket")?;
@@ -481,10 +500,11 @@ fn create_s3_store(
     Ok((Arc::new(s3_store), path, uri.to_string()))
 }
 
-/// Helper function to create GCS object store with options
+/// Helper function to create GCS object store with options.
+#[cfg(feature = "cloud")]
 fn create_gcs_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, path) = parse_url_and_path(uri)?;
     let bucket = extract_host(&url, "Invalid GCS URI: missing bucket")?;
@@ -529,10 +549,11 @@ fn create_gcs_store(
     Ok((Arc::new(gcs_store), path, uri.to_string()))
 }
 
-/// Helper function to create Azure object store with options
+/// Helper function to create Azure object store with options.
+#[cfg(feature = "cloud")]
 fn create_azure_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, _) = parse_url_and_path(uri)?;
     let container = extract_host(&url, "Invalid Azure URI: missing container")?;
@@ -588,9 +609,10 @@ fn create_azure_store(
 }
 
 /// Helper function to create Azure object store from abfs:// URI with options.
+#[cfg(feature = "cloud")]
 fn create_abfs_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, path) = parse_url_and_path(uri)?;
     let host = extract_host(&url, "Invalid ABFS URI: missing host")?;
@@ -658,9 +680,10 @@ fn create_abfs_store(
 }
 
 /// Helper function to create HTTP object store with options.
+#[cfg(feature = "cloud")]
 fn create_http_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, path) = parse_url_and_path(uri)?;
     let base_url = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
@@ -682,6 +705,7 @@ fn create_http_store(
 }
 
 /// Helper function to parse URL and extract path component.
+#[cfg(feature = "cloud")]
 fn parse_url_and_path(uri: &str) -> anyhow::Result<(url::Url, String)> {
     let url = url::Url::parse(uri)?;
     let path = url.path().trim_start_matches('/').to_string();
@@ -689,20 +713,17 @@ fn parse_url_and_path(uri: &str) -> anyhow::Result<(url::Url, String)> {
 }
 
 /// Helper function to extract host from URL with error handling.
+#[cfg(feature = "cloud")]
 fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
     url.host_str()
         .map(ToString::to_string)
-        .ok_or_else(|| anyhow::anyhow!("{}", error_msg))
+        .ok_or_else(|| anyhow::anyhow!("{error_msg}"))
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
+    #[cfg(feature = "cloud")]
+    use ahash::AHashMap;
     use rstest::rstest;
 
     use super::*;
@@ -728,8 +749,9 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "cloud")]
     fn test_create_object_store_from_path_s3() {
-        let mut options = HashMap::new();
+        let mut options = AHashMap::new();
         options.insert(
             "endpoint_url".to_string(),
             "https://test.endpoint.com".to_string(),
@@ -746,8 +768,9 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "cloud")]
     fn test_create_object_store_from_path_azure() {
-        let mut options = HashMap::new();
+        let mut options = AHashMap::new();
         options.insert("account_name".to_string(), "testaccount".to_string());
         // Use a valid base64 encoded key for testing
         options.insert("account_key".to_string(), "dGVzdGtleQ==".to_string()); // "testkey" in base64
@@ -763,9 +786,10 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "cloud")]
     fn test_create_object_store_from_path_gcs() {
         // Test GCS without service account (will use default credentials or fail gracefully)
-        let mut options = HashMap::new();
+        let mut options = AHashMap::new();
         options.insert("project_id".to_string(), "test-project".to_string());
 
         let result = create_object_store_from_path("gs://test-bucket/path", Some(options));
@@ -785,6 +809,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "cloud")]
     fn test_create_object_store_from_path_empty_options() {
         let result = create_object_store_from_path("s3://test-bucket/path", None);
         assert!(result.is_ok());
@@ -794,6 +819,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "cloud")]
     fn test_parse_url_and_path() {
         let result = parse_url_and_path("s3://bucket/path/to/file");
         assert!(result.is_ok());
@@ -804,6 +830,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "cloud")]
     fn test_extract_host() {
         let url = url::Url::parse("s3://test-bucket/path").unwrap();
         let result = extract_host(&url, "Test error");

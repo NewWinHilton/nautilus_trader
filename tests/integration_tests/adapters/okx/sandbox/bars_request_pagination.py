@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -253,7 +253,7 @@ async def main(args: argparse.Namespace) -> None:
     inst_type = nautilus_pyo3.OKXInstrumentType.SWAP
     instruments = await http_client.request_instruments(inst_type, None)
     for inst in instruments:
-        http_client.add_instrument(inst)
+        http_client.cache_instrument(inst)
     logger.info(f"Cached {len(instruments)} {inst_type} instruments")
 
     # BarType

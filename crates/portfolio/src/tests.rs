@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,6 +37,7 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderTestBuilder},
     position::Position,
+    stubs::TestDefault,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::{fixture, rstest};
@@ -59,7 +60,7 @@ fn clock() -> TestClock {
 
 #[fixture]
 fn venue() -> Venue {
-    Venue::new("SIM")
+    Venue::test_default()
 }
 
 #[fixture]
@@ -71,7 +72,7 @@ fn instrument_audusd(audusd_sim: CurrencyPair) -> InstrumentAny {
 fn instrument_gbpusd() -> InstrumentAny {
     InstrumentAny::CurrencyPair(default_fx_ccy(
         Symbol::from("GBP/USD"),
-        Some(Venue::from("SIM")),
+        Some(Venue::test_default()),
     ))
 }
 
@@ -106,7 +107,7 @@ fn portfolio(
     )
 }
 
-use std::collections::HashMap;
+use ahash::AHashMap;
 
 // Helpers
 fn get_cash_account(accountid: Option<&str>) -> AccountState {
@@ -343,7 +344,6 @@ fn get_close_position(position: &Position) -> PositionClosed {
     }
 }
 
-// Tests
 #[rstest]
 fn test_account_when_account_returns_the_account_facade(mut portfolio: Portfolio) {
     let account_id = "BINANCE-1513111";
@@ -360,19 +360,19 @@ fn test_account_when_account_returns_the_account_facade(mut portfolio: Portfolio
 #[rstest]
 fn test_balances_locked_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
     let result = portfolio.balances_locked(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
 fn test_margins_init_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
     let result = portfolio.margins_init(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
 fn test_margins_maint_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
     let result = portfolio.margins_maint(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
@@ -390,7 +390,7 @@ fn test_unrealized_pnl_for_venue_when_no_account_returns_empty_dict(
     venue: Venue,
 ) {
     let result = portfolio.unrealized_pnls(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
@@ -408,7 +408,7 @@ fn test_realized_pnl_for_venue_when_no_account_returns_empty_dict(
     venue: Venue,
 ) {
     let result = portfolio.realized_pnls(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
@@ -515,7 +515,7 @@ fn test_exceed_free_balance_multi_currency_raises_account_balance_negative_excep
     let account = portfolio
         .cache
         .borrow_mut()
-        .account_for_venue(&Venue::from("SIM"))
+        .account_for_venue(&Venue::test_default())
         .unwrap()
         .clone();
 
@@ -536,7 +536,6 @@ fn test_exceed_free_balance_multi_currency_raises_account_balance_negative_excep
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
     portfolio.update_order(&OrderEventAny::Submitted(submitted));
 
-    // Assert
     assert_eq!(
         account
             .balances()
@@ -583,7 +582,7 @@ fn test_update_orders_open_cash_account(
 
     assert_eq!(
         portfolio
-            .balances_locked(&Venue::from("SIM"))
+            .balances_locked(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
@@ -647,12 +646,10 @@ fn test_update_orders_open_margin_account(
     let fill1 = fill_order(&order1);
     order1.apply(OrderEventAny::Filled(fill1)).unwrap();
 
-    // Act
     let last = get_quote_tick(&instrument_btcusdt, 25001.0, 25002.0, 15.0, 12.0);
     portfolio.update_quote_tick(&last);
     portfolio.initialize_orders();
 
-    // Assert
     // TODO: This test needs to be fixed - order1 is filled so it's not open anymore
     // and order2 was never submitted/accepted. Need to properly set up open orders
     // for initialize_orders() to work correctly.
@@ -705,10 +702,8 @@ fn test_order_accept_updates_margin_init(
         .add_order(order.clone(), None, None, true)
         .unwrap();
 
-    // Act
     portfolio.initialize_orders();
 
-    // Assert
     // TODO: This test needs to be fixed - the order setup doesn't result in open orders
     // that initialize_orders() can work with.
     let margins = portfolio.margins_init(&Venue::from("BINANCE"));
@@ -785,7 +780,6 @@ fn test_update_positions(mut portfolio: Portfolio, instrument_audusd: Instrument
     // Update the last quote
     let last = get_quote_tick(&instrument_audusd, 250001.0, 250002.0, 1.0, 1.0);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -800,7 +794,6 @@ fn test_update_positions(mut portfolio: Portfolio, instrument_audusd: Instrument
     portfolio.update_quote_tick(&last);
     portfolio.initialize_positions();
 
-    // Assert
     assert!(portfolio.is_net_long(&instrument_audusd.id()));
 }
 
@@ -829,7 +822,6 @@ fn test_opening_one_long_position_updates_portfolio(
 
     let position = Position::new(&instrument_audusd, fill);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -839,10 +831,9 @@ fn test_opening_one_long_position_updates_portfolio(
     let position_opened = get_open_position(&position);
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
 
-    // Assert
     assert_eq!(
         portfolio
-            .net_exposures(&Venue::from("SIM"))
+            .net_exposures(&Venue::test_default())
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
@@ -851,7 +842,7 @@ fn test_opening_one_long_position_updates_portfolio(
     );
     assert_eq!(
         portfolio
-            .unrealized_pnls(&Venue::from("SIM"))
+            .unrealized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
@@ -859,7 +850,7 @@ fn test_opening_one_long_position_updates_portfolio(
     );
     assert!(
         portfolio
-            .realized_pnls(&Venue::from("SIM"))
+            .realized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .is_zero(),
@@ -884,10 +875,7 @@ fn test_opening_one_long_position_updates_portfolio(
             .unwrap()
             .is_zero(),
     );
-    assert_eq!(
-        portfolio.net_position(&instrument_audusd.id()),
-        Decimal::new(561, 3)
-    );
+    assert_eq!(portfolio.net_position(&instrument_audusd.id()), dec!(0.561));
     assert!(portfolio.is_net_long(&instrument_audusd.id()));
     assert!(!portfolio.is_net_short(&instrument_audusd.id()));
     assert!(!portfolio.is_flat(&instrument_audusd.id()));
@@ -918,7 +906,6 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
 
     let position = Position::new(&instrument_audusd, fill);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -928,10 +915,9 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
     let position_opened = get_open_position(&position);
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
 
-    // Assert
     assert_eq!(
         portfolio
-            .net_exposures(&Venue::from("SIM"))
+            .net_exposures(&Venue::test_default())
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
@@ -940,7 +926,7 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
     );
     assert_eq!(
         portfolio
-            .unrealized_pnls(&Venue::from("SIM"))
+            .unrealized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
@@ -948,7 +934,7 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
     );
     assert!(
         portfolio
-            .realized_pnls(&Venue::from("SIM"))
+            .realized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .is_zero(),
@@ -973,10 +959,7 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
             .unwrap()
             .is_zero(),
     );
-    assert_eq!(
-        portfolio.net_position(&instrument_audusd.id()),
-        Decimal::new(561, 3)
-    );
+    assert_eq!(portfolio.net_position(&instrument_audusd.id()), dec!(0.561));
     assert!(portfolio.is_net_long(&instrument_audusd.id()));
     assert!(!portfolio.is_net_short(&instrument_audusd.id()));
     assert!(!portfolio.is_flat(&instrument_audusd.id()));
@@ -1028,7 +1011,6 @@ fn test_opening_one_short_position_updates_portfolio(
 
     let position = Position::new(&instrument_audusd, filled);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -1038,10 +1020,9 @@ fn test_opening_one_short_position_updates_portfolio(
     let position_opened = get_open_position(&position);
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
 
-    // Assert
     assert_eq!(
         portfolio
-            .net_exposures(&Venue::from("SIM"))
+            .net_exposures(&Venue::test_default())
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
@@ -1050,7 +1031,7 @@ fn test_opening_one_short_position_updates_portfolio(
     );
     assert_eq!(
         portfolio
-            .unrealized_pnls(&Venue::from("SIM"))
+            .unrealized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
@@ -1058,7 +1039,7 @@ fn test_opening_one_short_position_updates_portfolio(
     );
     assert_eq!(
         portfolio
-            .realized_pnls(&Venue::from("SIM"))
+            .realized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
@@ -1085,10 +1066,7 @@ fn test_opening_one_short_position_updates_portfolio(
             .as_decimal(),
         dec!(-12.2)
     );
-    assert_eq!(
-        portfolio.net_position(&instrument_audusd.id()),
-        Decimal::new(-2, 0)
-    );
+    assert_eq!(portfolio.net_position(&instrument_audusd.id()), dec!(-2));
 
     assert!(!portfolio.is_net_long(&instrument_audusd.id()));
     assert!(portfolio.is_net_short(&instrument_audusd.id()));
@@ -1144,7 +1122,6 @@ fn test_opening_positions_with_multi_asset_account(
 
     let position = Position::new(&instrument_ethusdt, filled);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -1154,7 +1131,6 @@ fn test_opening_positions_with_multi_asset_account(
     let position_opened = get_open_position(&position);
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("BITMEX"))
@@ -1174,7 +1150,7 @@ fn test_opening_positions_with_multi_asset_account(
     // TODO: fix
     // assert!(
     //     portfolio
-    //         .margins_maint(&Venue::from("SIM"))
+    //         .margins_maint(&Venue::test_default())
     //         .get(&instrument_audusd.id())
     //         .unwrap()
     //         .is_zero(),
@@ -1232,7 +1208,6 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
     let position = Position::new(&instrument_ethusdt, filled);
     let position_opened = get_open_position(&position);
 
-    // Act
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
     portfolio
         .cache
@@ -1244,7 +1219,6 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
     portfolio.update_quote_tick(&last_ethusd);
     portfolio.update_quote_tick(&last_xbtusd);
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("BITMEX"))
@@ -1349,7 +1323,6 @@ fn test_opening_several_positions_updates_portfolio(
     let position_opened1 = get_open_position(&position1);
     let position_opened2 = get_open_position(&position2);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -1363,10 +1336,9 @@ fn test_opening_several_positions_updates_portfolio(
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened1));
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened2));
 
-    // Assert
     assert_eq!(
         portfolio
-            .net_exposures(&Venue::from("SIM"))
+            .net_exposures(&Venue::test_default())
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
@@ -1376,7 +1348,7 @@ fn test_opening_several_positions_updates_portfolio(
 
     assert_eq!(
         portfolio
-            .unrealized_pnls(&Venue::from("SIM"))
+            .unrealized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
@@ -1385,14 +1357,17 @@ fn test_opening_several_positions_updates_portfolio(
 
     assert_eq!(
         portfolio
-            .realized_pnls(&Venue::from("SIM"))
+            .realized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
         dec!(-12.2)
     );
     // FIX: TODO: should not be empty
-    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+    assert_eq!(
+        portfolio.margins_maint(&Venue::test_default()),
+        AHashMap::new()
+    );
     assert_eq!(
         portfolio
             .net_exposure(&instrument_audusd.id())
@@ -1528,13 +1503,11 @@ fn test_modifying_position_updates_portfolio(
     position1.apply(&fill2);
     let position1_changed = get_changed_position(&position1);
 
-    // Act
     portfolio.update_position(&PositionEvent::PositionChanged(position1_changed));
 
-    // Assert
     assert_eq!(
         portfolio
-            .net_exposures(&Venue::from("SIM"))
+            .net_exposures(&Venue::test_default())
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
@@ -1544,7 +1517,7 @@ fn test_modifying_position_updates_portfolio(
 
     assert_eq!(
         portfolio
-            .unrealized_pnls(&Venue::from("SIM"))
+            .unrealized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
@@ -1553,14 +1526,17 @@ fn test_modifying_position_updates_portfolio(
 
     assert_eq!(
         portfolio
-            .realized_pnls(&Venue::from("SIM"))
+            .realized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
         dec!(-12.2)
     );
     // FIX: TODO: should not be empty
-    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+    assert_eq!(
+        portfolio.margins_maint(&Venue::test_default()),
+        AHashMap::new()
+    );
     assert_eq!(
         portfolio
             .net_exposure(&instrument_audusd.id())
@@ -1592,11 +1568,11 @@ fn test_modifying_position_updates_portfolio(
     assert!(!portfolio.is_completely_flat());
     assert_eq!(
         portfolio.unrealized_pnls(&Venue::from("BINANCE")),
-        HashMap::new()
+        AHashMap::new()
     );
     assert_eq!(
         portfolio.realized_pnls(&Venue::from("BINANCE")),
-        HashMap::new()
+        AHashMap::new()
     );
     assert_eq!(portfolio.net_exposures(&Venue::from("BINANCE")), None);
 }
@@ -1606,7 +1582,7 @@ fn test_closing_position_updates_portfolio(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
 ) {
-    // Arrange - Create margin account with 1,000,000 USD balance
+    // Create margin account with 1,000,000 USD balance
     let account_id = AccountId::new("SIM-01234");
     let account_state = AccountState::new(
         account_id,
@@ -1717,20 +1693,20 @@ fn test_closing_position_updates_portfolio(
         .unwrap();
     portfolio.update_quote_tick(&closing_quote_tick);
 
-    // Act - Update portfolio with position closed event
+    // Update portfolio with position closed event
     let position_closed = get_close_position(&position);
     portfolio.update_position(&PositionEvent::PositionClosed(position_closed));
 
-    // Assert - Check portfolio state after position closure
-    let net_exposures = portfolio.net_exposures(&Venue::from("SIM"));
+    // Check portfolio state after position closure
+    let net_exposures = portfolio.net_exposures(&Venue::test_default());
     assert!(net_exposures.is_none() || net_exposures.unwrap().is_empty()); // No net exposures
-    let unrealized_pnls_venue = portfolio.unrealized_pnls(&Venue::from("SIM"));
+    let unrealized_pnls_venue = portfolio.unrealized_pnls(&Venue::test_default());
     // Unrealized PnL should be zero for closed positions
     if let Some(usd_unrealized) = unrealized_pnls_venue.get(&Currency::USD()) {
         assert_eq!(usd_unrealized.as_decimal(), dec!(0.0));
     }
 
-    let realized_pnls = portfolio.realized_pnls(&Venue::from("SIM"));
+    let realized_pnls = portfolio.realized_pnls(&Venue::test_default());
     assert_eq!(
         realized_pnls.get(&Currency::USD()).unwrap().as_decimal(),
         dec!(6.0) // Expected realized PnL: 10 USD profit - 4 USD commission = 6 USD
@@ -1747,7 +1723,10 @@ fn test_closing_position_updates_portfolio(
             || unrealized_pnl_instrument.unwrap().as_decimal() == dec!(0.0)
     );
 
-    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new()); // No maintenance margins
+    assert_eq!(
+        portfolio.margins_maint(&Venue::test_default()),
+        AHashMap::new()
+    ); // No maintenance margins
 
     let net_exposure = portfolio.net_exposure(&instrument_audusd.id());
     assert!(net_exposure.is_none() || net_exposure.unwrap().as_decimal() == dec!(0.0)); // Zero net exposure
@@ -1760,7 +1739,7 @@ fn test_closing_position_updates_portfolio(
     assert_eq!(realized_pnl.unwrap().as_decimal(), dec!(6.0)); // 6 USD realized profit (after commission)
 
     // Calculate total PnLs manually (realized + unrealized for venue)
-    let realized_pnls_venue_final = portfolio.realized_pnls(&Venue::from("SIM"));
+    let realized_pnls_venue_final = portfolio.realized_pnls(&Venue::test_default());
     assert_eq!(
         realized_pnls_venue_final
             .get(&Currency::USD())
@@ -1941,10 +1920,9 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
         .unwrap();
     portfolio.update_position(&PositionEvent::PositionClosed(position_closed3));
 
-    // Assert
     assert_eq!(
         portfolio
-            .net_exposures(&Venue::from("SIM"))
+            .net_exposures(&Venue::test_default())
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
@@ -1953,20 +1931,23 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
     );
     assert!(
         portfolio
-            .unrealized_pnls(&Venue::from("SIM"))
+            .unrealized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .is_zero(),
     );
     assert!(
         portfolio
-            .realized_pnls(&Venue::from("SIM"))
+            .realized_pnls(&Venue::test_default())
             .get(&Currency::USD())
             .unwrap()
             .is_zero(),
     );
     // FIX: TODO: should not be empty
-    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+    assert_eq!(
+        portfolio.margins_maint(&Venue::test_default()),
+        AHashMap::new()
+    );
 }
 
 #[rstest]

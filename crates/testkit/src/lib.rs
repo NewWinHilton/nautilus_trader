@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,7 +35,7 @@
 //! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 //! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
-//! # Feature flags
+//! # Feature Flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case, i.e. whether to provide Python bindings
@@ -48,6 +48,7 @@
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]
@@ -56,6 +57,10 @@
 
 pub mod common;
 pub mod files;
+pub mod testers;
+
+// Re-export for convenience
+pub use testers::{DataTester, DataTesterConfig, ExecTester, ExecTesterConfig};
 
 #[cfg(feature = "python")]
 pub mod python;

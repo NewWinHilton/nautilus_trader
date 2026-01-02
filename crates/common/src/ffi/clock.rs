@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,7 +32,8 @@ use pyo3::{ffi, prelude::*};
 
 use super::timer::TimeEventHandler;
 use crate::{
-    clock::{Clock, LiveClock, TestClock},
+    clock::{Clock, TestClock},
+    live::clock::LiveClock,
     timer::{TimeEvent, TimeEventCallback},
 };
 
@@ -241,10 +242,25 @@ pub unsafe extern "C" fn test_clock_advance_time(
 
 // TODO: This drop helper may leak Python callbacks when handlers own Python objects.
 //       We need to mirror the `ffi::timer` registry so reference counts are decremented properly.
+/// Drops a `CVec` of `TimeEventHandler` values.
+///
+/// # Panics
+///
+/// Panics if `CVec` invariants are violated (corrupted metadata).
 #[allow(clippy::drop_non_drop)]
 #[unsafe(no_mangle)]
 pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
+
+    assert!(
+        len <= cap,
+        "vec_time_event_handlers_drop: len ({len}) > cap ({cap}) - memory corruption or wrong drop helper"
+    );
+    assert!(
+        len == 0 || !ptr.is_null(),
+        "vec_time_event_handlers_drop: null ptr with non-zero len ({len}) - memory corruption or wrong drop helper"
+    );
+
     let data: Vec<TimeEventHandler> =
         unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandler>(), len, cap) };
     drop(data); // Memory freed here

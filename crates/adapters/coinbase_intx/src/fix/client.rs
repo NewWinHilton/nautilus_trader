@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,7 +32,10 @@ use std::{
 
 use aws_lc_rs::hmac;
 use base64::prelude::*;
-use nautilus_common::logging::{log_task_started, log_task_stopped};
+use nautilus_common::{
+    live::get_runtime,
+    logging::{log_task_started, log_task_stopped},
+};
 #[cfg(feature = "python")]
 use nautilus_core::python::IntoPyObjectNautilusExt;
 use nautilus_core::{env::get_or_env_var, time::get_atomic_clock_realtime};
@@ -57,7 +60,7 @@ use crate::{
 
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx")
 )]
 #[derive(Debug, Clone)]
 pub struct CoinbaseIntxFixClient {
@@ -138,6 +141,12 @@ impl CoinbaseIntxFixClient {
     #[must_use]
     pub const fn api_key(&self) -> &str {
         self.api_key.as_str()
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        nautilus_core::string::mask_api_key(&self.api_key)
     }
 
     /// Returns the Coinbase International portfolio ID being used by the client.
@@ -303,6 +312,8 @@ impl CoinbaseIntxFixClient {
             reconnect_delay_max_ms: Some(30000),
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(500),
+            reconnect_max_attempts: None,
+            connection_max_retries: None,
             certs_dir: None,
         };
 
@@ -329,7 +340,7 @@ impl CoinbaseIntxFixClient {
         let heartbeat_secs = self.heartbeat_secs;
         let client_clone = self.clone();
 
-        self.processing_task = Some(Arc::new(tokio::spawn(async move {
+        self.processing_task = Some(Arc::new(get_runtime().spawn(async move {
             log_task_started("maintain-fix-connection");
 
             let mut last_logon_attempt = std::time::Instant::now()
@@ -359,7 +370,7 @@ impl CoinbaseIntxFixClient {
         let sender_comp_id = self.sender_comp_id.clone();
         let target_comp_id = self.target_comp_id.clone();
 
-        self.heartbeat_task = Some(Arc::new(tokio::spawn(async move {
+        self.heartbeat_task = Some(Arc::new(get_runtime().spawn(async move {
             log_task_started("heartbeat");
             tracing::debug!("Heartbeat at {heartbeat_secs}s intervals");
 

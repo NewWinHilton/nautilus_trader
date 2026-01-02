@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -142,10 +142,11 @@ impl DefiDataSubscriptionManager {
         let s = sig.trim();
 
         // Check if it's already a properly formatted hex string with 0x prefix
-        if let Some(rest) = s.strip_prefix("0x") {
-            if rest.len() == 64 && rest.chars().all(|c| c.is_ascii_hexdigit()) {
-                return format!("0x{}", rest.to_ascii_lowercase());
-            }
+        if let Some(rest) = s.strip_prefix("0x")
+            && rest.len() == 64
+            && rest.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            return format!("0x{}", rest.to_ascii_lowercase());
         }
 
         // Check if it's a hex string without 0x prefix
@@ -285,10 +286,6 @@ impl DefiDataSubscriptionManager {
         }
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

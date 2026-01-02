@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,6 +32,18 @@ class PolymarketError(Exception):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(code={self.code}, message='{self.message}')"
+
+
+class PolymarketAPIError(PolymarketError):
+    """
+    Represents an error response from the Polymarket CLOB API.
+
+    Raised when the API returns an error string instead of expected data.
+
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(code=None, message=message)
 
 
 def should_retry(error: BaseException) -> bool:

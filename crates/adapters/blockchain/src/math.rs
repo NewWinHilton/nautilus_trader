@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,7 +35,7 @@ pub fn convert_i256_to_f64(amount: I256, decimals: u8) -> anyhow::Result<f64> {
     let amount_str = abs_amount.to_string();
     let mut amount_f64: f64 = amount_str
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse I256 to f64: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse I256 to f64: {e}"))?;
 
     // Apply sign
     if is_negative {
@@ -57,7 +57,7 @@ pub fn convert_u256_to_f64(amount: U256, decimals: u8) -> anyhow::Result<f64> {
     let amount_str = amount.to_string();
     let amount_f64: f64 = amount_str
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse U256 to f64: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse U256 to f64: {e}"))?;
 
     // Apply decimal scaling
     let factor = 10f64.powi(i32::from(decimals));

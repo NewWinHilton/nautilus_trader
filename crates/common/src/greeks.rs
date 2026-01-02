@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -221,7 +221,7 @@ pub struct PortfolioGreeksParams {
     pub vega_time_weight_base: Option<i32>,
 }
 
-impl std::fmt::Debug for PortfolioGreeksParams {
+impl Debug for PortfolioGreeksParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(PortfolioGreeksParams))
             .field("underlyings", &self.underlyings)

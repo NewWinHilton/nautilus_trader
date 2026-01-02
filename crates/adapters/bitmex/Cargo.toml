@@ -48,7 +48,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
@@ -59,6 +59,7 @@ nautilus-serialization = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
@@ -69,9 +70,7 @@ futures-util = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-reqwest = { workspace = true }
 rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }
@@ -101,11 +100,14 @@ url = { workspace = true }
 [[bin]]
 name = "bitmex-http"
 path = "bin/http.rs"
+doc = false
 
 [[bin]]
 name = "bitmex-ws-data"
 path = "bin/ws_data.rs"
+doc = false
 
 [[bin]]
 name = "bitmex-ws-exec"
 path = "bin/ws_exec.rs"
+doc = false

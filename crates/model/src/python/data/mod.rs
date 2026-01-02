@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -117,9 +117,9 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
 #[allow(unsafe_code)]
 pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
     let capsule: &Bound<'_, PyCapsule> = capsule
-        .downcast::<PyCapsule>()
+        .cast::<PyCapsule>()
         .expect("Error on downcast to `&PyCapsule`");
-    let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+    let cvec: &CVec = unsafe { &*(capsule.pointer_checked(None).unwrap().as_ptr() as *const CVec) };
     let data: Vec<Data> =
         unsafe { Vec::from_raw_parts(cvec.ptr.cast::<Data>(), cvec.len, cvec.cap) };
     drop(data);

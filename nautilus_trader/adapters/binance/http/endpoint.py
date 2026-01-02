@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 def enc_hook(obj: Any) -> Any:
-    if isinstance(obj, BinanceSymbol) or isinstance(obj, BinanceSymbols):
+    if isinstance(obj, (BinanceSymbol, BinanceSymbols)):
         return str(obj)  # serialize BinanceSymbol as string.
     else:
         raise TypeError(f"Objects of type {type(obj)} are not supported")

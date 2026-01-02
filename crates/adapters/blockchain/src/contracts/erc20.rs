@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -327,7 +327,15 @@ fn parse_erc20_string_result(
     match field_name {
         Erc20Field::Name => ERC20::nameCall::abi_decode_returns(&result.returnData),
         Erc20Field::Symbol => ERC20::symbolCall::abi_decode_returns(&result.returnData),
-        _ => panic!("Expected Name or Symbol for for parse_erc20_string_result function argument"),
+        Erc20Field::Decimals => {
+            return Err(TokenInfoError::DecodingError {
+                field: field_name.to_string(),
+                address: *token_address,
+                reason: "Expected Name or Symbol for parse_erc20_string_result function argument"
+                    .to_string(),
+                raw_data: result.returnData.to_string(),
+            });
+        }
     }
     .map_err(|e| TokenInfoError::DecodingError {
         field: field_name.to_string(),

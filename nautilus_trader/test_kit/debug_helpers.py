@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -99,3 +99,9 @@ def setup_debugging(vs_code_path=PACKAGE_ROOT.parent, enable_python_debugging=Tr
         f"Created {len(config['configurations'])} configurations and {len(config['compounds'])} compound configurations",
     )
     print("1. In VS Code: Select 'Python + Rust Debugger (for Jupyter)' → Start Debugging (F5)")
+
+
+def print_stack():
+    import traceback
+
+    print("".join(traceback.format_stack()))

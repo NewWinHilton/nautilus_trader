@@ -333,15 +333,16 @@ def on_data(self, data: Data):
 
 Binance uses an interval-based rate limiting system where request weight is tracked per fixed time window (e.g., every minute resets at :00 seconds). The adapter uses token bucket rate limiters to approximate this behavior, helping to reduce the risk of quota violations while maintaining high throughput for normal trading operations.
 
-| Key / Endpoint        | Limit (weight/min) | Notes                                                 |
-|-----------------------|--------------------|-------------------------------------------------------|
-| `binance:global`      | Spot: 6,000<br>Futures: 2,400 | Default bucket applied to every request.   |
-| `/api/v3/order`       | 3,000              | Spot order placement.                                 |
-| `/api/v3/allOrders`   | 150                | Spot all-orders endpoint (20× weight multiplier).     |
-| `/api/v3/klines`      | 600                | Spot historical klines.                               |
-| `/fapi/v1/order`      | 1,200              | Futures order placement.                              |
-| `/fapi/v1/allOrders`  | 60                 | Futures historical orders (20× multiplier).           |
-| `/fapi/v1/klines`     | 600                | Futures historical klines.                            |
+| Key / Endpoint           | Limit (weight/min) | Notes                                                 |
+|--------------------------|--------------------| ------------------------------------------------------|
+| `binance:global`         | Spot: 6,000<br>Futures: 2,400 | Default bucket applied to every request.   |
+| `/api/v3/order`          | 3,000              | Spot order placement.                                 |
+| `/api/v3/allOrders`      | 150                | Spot all-orders endpoint (20× weight multiplier).     |
+| `/api/v3/klines`         | 600                | Spot historical klines.                               |
+| `/fapi/v1/order`         | 1,200              | Futures order placement.                              |
+| `/fapi/v1/allOrders`     | 60                 | Futures historical orders (20× multiplier).           |
+| `/fapi/v1/commissionRate`| 120                | Futures commission rate query (20× multiplier).       |
+| `/fapi/v1/klines`        | 600                | Futures historical klines.                            |
 
 Binance assigns request weight dynamically (e.g. `/klines` scales with `limit`). The quotas above mirror the static limits but the client still draws a single token per call, so long history pulls may need manual pacing to respect the live `X-MBX-USED-WEIGHT-*` headers.
 
@@ -366,6 +367,7 @@ For more details on rate limiting, see the official documentation: <https://bina
 | `account_type`                     | `SPOT`  | Account type for data endpoints (spot, margin, USDT futures, coin futures). |
 | `base_url_http`                    | `None`  | Override for the HTTP REST base URL. |
 | `base_url_ws`                      | `None`  | Override for the WebSocket base URL. |
+| `proxy_url`                        | `None`  | Optional proxy URL for HTTP requests. |
 | `us`                               | `False` | Route requests to Binance US endpoints when `True`. |
 | `testnet`                          | `False` | Use Binance testnet endpoints when `True`. |
 | `update_instruments_interval_mins` | `60`    | Interval (minutes) between instrument catalogue refreshes. |
@@ -382,6 +384,7 @@ For more details on rate limiting, see the official documentation: <https://bina
 | `account_type`                       | `SPOT`  | Account type for order placement (spot, margin, USDT futures, coin futures). |
 | `base_url_http`                      | `None`  | Override for the HTTP REST base URL. |
 | `base_url_ws`                        | `None`  | Override for the WebSocket base URL. |
+| `proxy_url`                          | `None`  | Optional proxy URL for HTTP requests. |
 | `us`                                 | `False` | Route requests to Binance US endpoints when `True`. |
 | `testnet`                            | `False` | Use Binance testnet endpoints when `True`. |
 | `use_gtd`                            | `True`  | When `False`, remaps GTD orders to GTC for local expiry management. |
@@ -479,6 +482,46 @@ config = TradingNodeConfig(
 Ed25519 keys must be provided in base64-encoded ASN.1/DER format. The implementation automatically extracts the 32-byte seed from the DER structure.
 :::
 
+#### Generating Ed25519 keys
+
+Ed25519 is required for Binance SBE (Simple Binary Encoding) streams and recommended for all API access due to better performance and security.
+
+**Option 1: OpenSSL (recommended)**
+
+```bash
+# Generate private key (PKCS#8 PEM format)
+openssl genpkey -algorithm ed25519 -out binance_ed25519_private.pem
+
+# Extract public key
+openssl pkey -in binance_ed25519_private.pem -pubout -out binance_ed25519_public.pem
+```
+
+**Option 2: Binance Key Generator**
+
+Download the [Binance Asymmetric Key Generator](https://github.com/binance/asymmetric-key-generator) from the releases page and run it to generate a keypair.
+
+**Registering with Binance**
+
+1. Log in to Binance and go to **Profile** → **API Management**
+2. Click **Create API** and select **Self-generated**
+3. Paste the contents of your public key file (including the `-----BEGIN PUBLIC KEY-----` header/footer)
+4. Configure permissions (Enable Spot & Margin Trading, etc.)
+
+**Using with NautilusTrader**
+
+Set the private key as your API secret:
+
+```bash
+export BINANCE_API_KEY="your-api-key-from-binance"
+export BINANCE_API_SECRET="$(cat binance_ed25519_private.pem)"
+```
+
+Or pass the PEM content directly in your configuration.
+
+:::warning
+Keep your private key secure. Never share it or commit it to version control.
+:::
+
 ### API credentials
 
 There are multiple options for supplying your credentials to the Binance clients.
@@ -567,6 +610,32 @@ ticks between a `start_time` and `end_time`.
 
 To use aggregated trades and the endpoint features, set the `use_agg_trade_ticks` option
 to `True` (this is `False` by default.)
+
+### Commission rate queries
+
+By default, Binance Futures instruments use fee tier tables based on your VIP level.
+For market maker accounts with negative maker fees or when precise rates are required,
+enable per-symbol commission rate queries:
+
+```python
+from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
+
+instrument_provider=BinanceInstrumentProviderConfig(
+    load_all=True,
+    query_commission_rates=True,  # Query accurate rates per symbol
+)
+```
+
+When enabled, the adapter queries Binance's `/fapi/v1/commissionRate` endpoint for
+each symbol in parallel during instrument loading. This is particularly useful for:
+
+- Market maker accounts with negative maker fees.
+- Accounts with custom fee arrangements.
+- Ensuring exact commission rates for PnL calculations.
+
+The adapter uses parallel requests with proper rate limiting (120 requests/minute
+accounting for the endpoint's weight of 20). If a query fails, it automatically
+falls back to the fee tier table.
 
 ### Parser warnings
 

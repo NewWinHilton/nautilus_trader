@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,7 +37,6 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::Currency,
 };
-use tokio::sync::Mutex;
 
 use crate::{
     common::get_date_time_range,
@@ -60,7 +59,7 @@ use crate::{
 pub struct DatabentoHistoricalClient {
     pub key: String,
     clock: &'static AtomicTime,
-    inner: Arc<Mutex<databento::HistoricalClient>>,
+    inner: Arc<tokio::sync::Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
     use_exchange_as_venue: bool,
@@ -113,7 +112,7 @@ impl DatabentoHistoricalClient {
 
         Ok(Self {
             clock,
-            inner: Arc::new(Mutex::new(client)),
+            inner: Arc::new(tokio::sync::Mutex::new(client)),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(RwLock::new(AHashMap::new())),
             key,
@@ -235,8 +234,15 @@ impl DatabentoHistoricalClient {
         let dbn_schema = dbn::Schema::from_str(&schema)?;
 
         match dbn_schema {
-            dbn::Schema::Mbp1 | dbn::Schema::Bbo1S | dbn::Schema::Bbo1M => (),
-            _ => anyhow::bail!("Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m"),
+            dbn::Schema::Mbp1
+            | dbn::Schema::Bbo1S
+            | dbn::Schema::Bbo1M
+            | dbn::Schema::Cmbp1
+            | dbn::Schema::Cbbo1S
+            | dbn::Schema::Cbbo1M => (),
+            _ => anyhow::bail!(
+                "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m"
+            ),
         }
 
         let range_params = GetRangeParams::builder()
@@ -283,17 +289,21 @@ impl DatabentoHistoricalClient {
             )?;
 
             match data {
-                Some(Data::Quote(quote)) => {
-                    result.push(quote);
-                    Ok(())
-                }
+                Some(Data::Quote(quote)) => result.push(quote),
+                None => {} // Skip records with undefined bid/ask prices
                 _ => anyhow::bail!("Invalid data element not `QuoteTick`, was {data:?}"),
             }
+            Ok(())
         };
 
         match dbn_schema {
             dbn::Schema::Mbp1 => {
                 while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Cmbp1 => {
+                while let Ok(Some(msg)) = decoder.decode_record::<dbn::Cmbp1Msg>().await {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }
@@ -304,6 +314,11 @@ impl DatabentoHistoricalClient {
             }
             dbn::Schema::Bbo1S => {
                 while let Ok(Some(msg)) = decoder.decode_record::<dbn::Bbo1SMsg>().await {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Cbbo1S | dbn::Schema::Cbbo1M => {
+                while let Ok(Some(msg)) = decoder.decode_record::<dbn::CbboMsg>().await {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,13 +43,13 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestDYDXDataClientBarPartitioning:
@@ -64,7 +64,7 @@ class TestDYDXDataClientBarPartitioning:
         self.loop = session_event_loop
         self.clock = LiveClock()
         self.msgbus = MessageBus(
-            trader_id=TraderId("TESTER-000"),
+            trader_id=TestIdStubs.trader_id(),
             clock=self.clock,
         )
         self.cache = Cache(database=MockCacheDatabase())
@@ -170,7 +170,7 @@ class TestDYDXDataClientBarPartitioning:
     # =====================================================================================
 
     @pytest.mark.parametrize(
-        "bars_count,max_bars,expected",
+        ("bars_count", "max_bars", "expected"),
         [
             (999, 1000, False),  # Just below threshold
             (1000, 1000, False),  # Exactly at threshold
@@ -234,13 +234,13 @@ class TestDYDXDataClientBarPartitioning:
 
             # Assert
             if expected_bars > 1000:
-                assert (
-                    should_partition is True
-                ), f"Should partition for {timeframe} with {expected_bars} bars"
+                assert should_partition is True, (
+                    f"Should partition for {timeframe} with {expected_bars} bars"
+                )
             else:
-                assert (
-                    should_partition is False
-                ), f"Should not partition for {timeframe} with {expected_bars} bars"
+                assert should_partition is False, (
+                    f"Should not partition for {timeframe} with {expected_bars} bars"
+                )
 
     # =====================================================================================
     # REQUEST SIZE HANDLING TESTS
@@ -248,7 +248,7 @@ class TestDYDXDataClientBarPartitioning:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "total_bars,expected_chunks",
+        ("total_bars", "expected_chunks"),
         [
             (1000, 1),  # Single chunk
             (1500, 2),  # Two chunks: 1000 + 500
@@ -298,14 +298,16 @@ class TestDYDXDataClientBarPartitioning:
             return bars
 
         # Mock the fetch_candles method
-        with patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles):
-            with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
-                # Act
-                await self.data_client._request_bars(request)
+        with (
+            patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles),
+            patch.object(self.data_client, "_handle_bars_py") as mock_handle,
+        ):
+            # Act
+            await self.data_client._request_bars(request)
 
-                # Assert
-                assert fetch_call_count == expected_chunks
-                mock_handle.assert_called_once()
+            # Assert
+            assert fetch_call_count == expected_chunks
+            mock_handle.assert_called_once()
 
     # =====================================================================================
     # BAR AGGREGATION TESTS
@@ -456,7 +458,7 @@ class TestDYDXDataClientBarPartitioning:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "total_bars,limit,expected_result_bars",
+        ("total_bars", "limit", "expected_result_bars"),
         [
             (2000, 1500, 1499),  # 1500 limit applied, minus 1 for partial
             (3000, 2500, 2499),  # 2500 limit applied, minus 1 for partial
@@ -527,22 +529,24 @@ class TestDYDXDataClientBarPartitioning:
             return bars
 
         # Mock the _fetch_candles method
-        with patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles):
-            with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
-                # Act
-                await self.data_client._request_bars(request)
+        with (
+            patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles),
+            patch.object(self.data_client, "_handle_bars_py") as mock_handle,
+        ):
+            # Act
+            await self.data_client._request_bars(request)
 
-                # Assert
-                mock_handle.assert_called_once()
-                call_args = mock_handle.call_args
-                bars = call_args[0][1]  # The bars argument
+            # Assert
+            mock_handle.assert_called_once()
+            call_args = mock_handle.call_args
+            bars = call_args[0][1]  # The bars argument
 
-                # For the test, we just verify that bars were returned
-                # and that the limit was applied if specified
-                if limit > 0:
-                    assert len(bars) <= limit
-                else:
-                    assert len(bars) > 0
+            # For the test, we just verify that bars were returned
+            # and that the limit was applied if specified
+            if limit > 0:
+                assert len(bars) <= limit
+            else:
+                assert len(bars) > 0
 
     # =====================================================================================
     # BASIC FUNCTIONALITY TESTS

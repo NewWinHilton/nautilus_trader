@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -110,7 +110,7 @@ impl BaseContract {
 
         let encoded_response = self
             .client
-            .execute_eth_call::<String>(rpc_request)
+            .execute_rpc_call::<String>(rpc_request)
             .await
             .map_err(|e| BlockchainRpcClientError::ClientError(format!("RPC call failed: {e}")))?;
 
@@ -149,7 +149,7 @@ impl BaseContract {
 
         let encoded_response = self
             .client
-            .execute_eth_call::<String>(rpc_request)
+            .execute_rpc_call::<String>(rpc_request)
             .await
             .map_err(|e| BlockchainRpcClientError::ClientError(format!("Multicall failed: {e}")))?;
 

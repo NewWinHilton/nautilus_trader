@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -68,5 +68,19 @@ impl DatabentoDataClient {
     #[getter]
     pub fn is_disconnected(&self) -> bool {
         DataClient::is_disconnected(self)
+    }
+
+    /// Returns the API key associated with this client.
+    #[getter]
+    #[pyo3(name = "api_key")]
+    pub fn py_api_key(&self) -> &str {
+        self.config.api_key()
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    pub fn py_api_key_masked(&self) -> String {
+        self.config.api_key_masked()
     }
 }

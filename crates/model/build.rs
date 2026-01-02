@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,8 +28,14 @@
 #[cfg(feature = "ffi")]
 use std::env;
 
-#[allow(clippy::expect_used)]
-#[allow(unused_assignments)]
+#[allow(
+    clippy::expect_used,
+    reason = "Build script may panic on misconfiguration"
+)]
+#[allow(
+    unused_assignments,
+    reason = "Conditional compilation creates unused assignments"
+)]
 #[allow(unused_mut)]
 fn main() {
     // Skip file generation if we're in the docs.rs environment

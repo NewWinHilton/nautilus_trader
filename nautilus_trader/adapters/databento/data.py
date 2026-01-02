@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,6 +30,7 @@ from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.adapters.databento.types import DatabentoImbalance
 from nautilus_trader.adapters.databento.types import DatabentoStatistics
+from nautilus_trader.adapters.databento.types import DatabentoSubscriptionAck
 from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -145,6 +146,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
         self._bars_timestamp_on_close: bool = config.bars_timestamp_on_close
+        self._reconnect_timeout_mins: int | None = config.reconnect_timeout_mins
         self._parent_symbols: dict[Dataset, set[str]] = defaultdict(set)
         self._venue_dataset_map: dict[Venue, Dataset] | None = config.venue_dataset_map
         self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
@@ -153,6 +155,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._log.info(f"{config.timeout_initial_load=}", LogColor.BLUE)
         self._log.info(f"{config.mbo_subscriptions_delay=}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
+        self._log.info(f"{config.reconnect_timeout_mins=}", LogColor.BLUE)
 
         # Clients
         self._http_client = http_client
@@ -311,6 +314,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
                 use_exchange_as_venue=self._use_exchange_as_venue,
                 bars_timestamp_on_close=self._bars_timestamp_on_close,
+                reconnect_timeout_mins=self._reconnect_timeout_mins,
             )
             self._live_clients[dataset] = live_client
 
@@ -327,6 +331,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
                 use_exchange_as_venue=self._use_exchange_as_venue,
                 bars_timestamp_on_close=self._bars_timestamp_on_close,
+                reconnect_timeout_mins=self._reconnect_timeout_mins,
             )
             self._live_clients_mbo[dataset] = live_client
 
@@ -904,8 +909,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
-            f"Requesting {instrument_id} imbalance: "
-            f"dataset={dataset}, start={start}, end={end}",
+            f"Requesting {instrument_id} imbalance: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
@@ -933,8 +937,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
-            f"Requesting {instrument_id} statistics: "
-            f"dataset={dataset}, start={start}, end={end}",
+            f"Requesting {instrument_id} statistics: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
@@ -1178,7 +1181,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         self,
         record: object,
     ) -> None:
-        # TODO: Improve the efficiency of this
+        if isinstance(record, DatabentoSubscriptionAck):
+            self._handle_subscription_ack(record)
+            return
+
         if isinstance(record, nautilus_pyo3.InstrumentStatus):
             data = InstrumentStatus.from_pyo3(record)
         elif isinstance(record, DatabentoImbalance):
@@ -1191,6 +1197,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             raise RuntimeError(f"Cannot handle pyo3 record `{record!r}`")
 
         self._handle_data(data)
+
+    def _handle_subscription_ack(self, ack: DatabentoSubscriptionAck) -> None:
+        self._log.info(f"Subscription acknowledged: {ack.message}", LogColor.BLUE)
 
     def _handle_msg(
         self,

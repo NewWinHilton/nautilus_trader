@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -189,12 +189,15 @@ impl AtomicTime {
 
     /// Returns the current time as seconds.
     #[must_use]
-    #[allow(clippy::cast_precision_loss)]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Precision loss acceptable for time conversion"
+    )]
     pub fn get_time(&self) -> f64 {
         self.get_time_ns().as_f64() / (NANOSECONDS_IN_SECOND as f64)
     }
 
-    /// Manually sets a new time for the clock (only meaningful in **static mode**).
+    /// Manually sets a new time for the clock (only possible in **static mode**).
     ///
     /// This uses an atomic store with [`Ordering::Release`], so any thread reading with
     /// [`Ordering::Acquire`] will see the updated time. This does *not* enforce a total ordering
@@ -202,18 +205,31 @@ impl AtomicTime {
     /// sees all writes made before this call in the writing thread.
     ///
     /// Typically used in single-threaded scenarios or coordinated concurrency in **static mode**,
-    /// since there’s no global ordering across threads.
+    /// since there's no global ordering across threads.
     ///
     /// # Panics
     ///
     /// Panics if invoked when in real-time mode.
+    ///
+    /// # Thread Safety
+    ///
+    /// The mode check is not atomic with the subsequent store. If another thread calls
+    /// `make_realtime()` between the check and store, the invariant can be violated.
+    /// This is intentional: mode switching is a setup-time operation and should not
+    /// occur concurrently with time operations. Callers must ensure mode switches are
+    /// complete before resuming time operations.
     pub fn set_time(&self, time: UnixNanos) {
         assert!(
-            !self.realtime.load(Ordering::Acquire),
+            !self.realtime.load(Ordering::SeqCst),
             "Cannot set time while clock is in realtime mode"
         );
 
         self.store(time.into(), Ordering::Release);
+
+        debug_assert!(
+            !self.realtime.load(Ordering::SeqCst),
+            "Invariant violated: mode switched to realtime during set_time"
+        );
     }
 
     /// Increments the current (static-mode) time by `delta` nanoseconds and returns the updated value.
@@ -223,14 +239,19 @@ impl AtomicTime {
     ///
     /// # Errors
     ///
-    /// Returns an error if the increment would overflow `u64::MAX`.
+    /// Returns an error if the increment would overflow `u64::MAX` or if called
+    /// while the clock is in real-time mode.
     ///
-    /// # Panics
+    /// # Thread Safety
     ///
-    /// Panics if called while the clock is in real-time mode.
+    /// The mode check is not atomic with the subsequent update. If another thread calls
+    /// `make_realtime()` between the check and update, the invariant can be violated.
+    /// This is intentional: mode switching is a setup-time operation and should not
+    /// occur concurrently with time operations. Callers must ensure mode switches are
+    /// complete before resuming time operations.
     pub fn increment_time(&self, delta: u64) -> anyhow::Result<UnixNanos> {
-        assert!(
-            !self.realtime.load(Ordering::Acquire),
+        anyhow::ensure!(
+            !self.realtime.load(Ordering::SeqCst),
             "Cannot increment time while clock is in realtime mode"
         );
 
@@ -243,6 +264,11 @@ impl AtomicTime {
                 Ok(prev) => prev,
                 Err(_) => anyhow::bail!("Cannot increment time beyond u64::MAX"),
             };
+
+        debug_assert!(
+            !self.realtime.load(Ordering::SeqCst),
+            "Invariant violated: mode switched to realtime during increment_time"
+        );
 
         Ok(UnixNanos::from(previous + delta))
     }
@@ -320,9 +346,6 @@ impl AtomicTime {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -369,10 +392,16 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Cannot increment time while clock is in realtime mode")]
-    fn test_increment_time_panics_in_realtime_mode() {
+    fn test_increment_time_returns_error_in_realtime_mode() {
         let clock = AtomicTime::new(true, UnixNanos::default());
-        let _ = clock.increment_time(1);
+        let result = clock.increment_time(1);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Cannot increment time while clock is in realtime mode")
+        );
     }
 
     #[rstest]
@@ -454,7 +483,11 @@ mod tests {
     }
 
     #[rstest]
-    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Intentional cast for Python interop"
+    )]
     fn test_nanos_since_unix_epoch_vs_system_time() {
         let unix_nanos = nanos_since_unix_epoch();
         let system_ns = duration_since_unix_epoch().as_nanos() as u64;
@@ -636,9 +669,7 @@ mod tests {
                     if aux_value > 0 {
                         assert!(
                             aux_value >= max_aux_seen,
-                            "Acquire/Release contract violated: aux went backwards from {} to {}",
-                            max_aux_seen,
-                            aux_value
+                            "Acquire/Release contract violated: aux went backwards from {max_aux_seen} to {aux_value}"
                         );
                         max_aux_seen = aux_value;
                     }
@@ -656,9 +687,7 @@ mod tests {
                 if final_aux > 0 {
                     assert!(
                         final_aux >= max_aux_seen,
-                        "Acquire/Release contract violated: final aux {} < max {}",
-                        final_aux,
-                        max_aux_seen
+                        "Acquire/Release contract violated: final aux {final_aux} < max {max_aux_seen}"
                     );
                     max_aux_seen = final_aux;
                 }
@@ -714,9 +743,7 @@ mod tests {
                     if aux_value > 0 {
                         assert!(
                             aux_value >= max_aux,
-                            "AcqRel contract violated: aux regressed from {} to {}",
-                            max_aux,
-                            aux_value
+                            "AcqRel contract violated: aux regressed from {max_aux} to {aux_value}"
                         );
                         max_aux = aux_value;
                     }
@@ -734,9 +761,7 @@ mod tests {
                 if final_aux > 0 {
                     assert!(
                         final_aux >= max_aux,
-                        "AcqRel contract violated: final aux {} < max {}",
-                        final_aux,
-                        max_aux
+                        "AcqRel contract violated: final aux {final_aux} < max {max_aux}"
                     );
                     max_aux = final_aux;
                 }

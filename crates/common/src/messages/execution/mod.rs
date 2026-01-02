@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,19 +21,24 @@ pub mod query;
 pub mod report;
 pub mod submit;
 
+// Re-exports
+pub use nautilus_core::Params;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    identifiers::{ClientId, InstrumentId},
+    identifiers::{ClientId, InstrumentId, StrategyId},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use strum::Display;
 
-// Re-exports
 pub use self::{
-    cancel::BatchCancelOrders, cancel::CancelAllOrders, cancel::CancelOrder, modify::ModifyOrder,
-    query::QueryAccount, query::QueryOrder, report::GenerateFillReports,
-    report::GenerateOrderStatusReport, report::GeneratePositionReports, submit::SubmitOrder,
-    submit::SubmitOrderList,
+    cancel::{BatchCancelOrders, CancelAllOrders, CancelOrder},
+    modify::ModifyOrder,
+    query::{QueryAccount, QueryOrder},
+    report::{
+        GenerateExecutionMassStatus, GenerateFillReports, GenerateOrderStatusReport,
+        GenerateOrderStatusReports, GeneratePositionStatusReports,
+    },
+    submit::{SubmitOrder, SubmitOrderList},
 };
 
 /// Execution report variants for reconciliation.
@@ -61,7 +66,7 @@ pub enum TradingCommand {
 
 impl TradingCommand {
     #[must_use]
-    pub const fn client_id(&self) -> ClientId {
+    pub const fn client_id(&self) -> Option<ClientId> {
         match self {
             Self::SubmitOrder(command) => command.client_id,
             Self::SubmitOrderList(command) => command.client_id,
@@ -104,6 +109,20 @@ impl TradingCommand {
             Self::BatchCancelOrders(command) => command.ts_init,
             Self::QueryOrder(command) => command.ts_init,
             Self::QueryAccount(command) => command.ts_init,
+        }
+    }
+
+    #[must_use]
+    pub const fn strategy_id(&self) -> Option<StrategyId> {
+        match self {
+            Self::SubmitOrder(command) => Some(command.strategy_id),
+            Self::SubmitOrderList(command) => Some(command.strategy_id),
+            Self::ModifyOrder(command) => Some(command.strategy_id),
+            Self::CancelOrder(command) => Some(command.strategy_id),
+            Self::CancelAllOrders(command) => Some(command.strategy_id),
+            Self::BatchCancelOrders(command) => Some(command.strategy_id),
+            Self::QueryOrder(command) => Some(command.strategy_id),
+            Self::QueryAccount(_) => None,
         }
     }
 }

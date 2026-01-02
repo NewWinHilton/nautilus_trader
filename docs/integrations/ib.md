@@ -15,7 +15,7 @@ The standalone TWS and IB Gateway applications require manually inputting userna
 To install NautilusTrader with Interactive Brokers (and Docker) support:
 
 ```bash
-pip install --upgrade "nautilus_trader[ib,docker]"
+uv pip install "nautilus_trader[ib,docker]"
 ```
 
 To build from source with all extras (including IB and Docker):
@@ -550,23 +550,23 @@ Interactive Brokers supports option spreads through BAG contracts, which combine
 
 ### Creating option spread instrument IDs
 
-Option spreads are created using the `InstrumentId.new_spread()` method, which combines individual option legs with their respective ratios:
+Option spreads are created using the `new_generic_spread_id()` function, which combines individual option legs with their respective ratios:
 
 ```python
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import InstrumentId, new_generic_spread_id
 
 # Create individual option instrument IDs
 call_leg = InstrumentId.from_str("SPY C400.SMART")
 put_leg = InstrumentId.from_str("SPY P390.SMART")
 
 # Create a 1:1 call spread (long call, short call)
-call_spread_id = InstrumentId.new_spread([
+call_spread_id = new_generic_spread_id([
     (call_leg, 1),   # Long 1 contract
     (put_leg, -1),   # Short 1 contract
 ])
 
 # Create a 1:2 ratio spread
-ratio_spread_id = InstrumentId.new_spread([
+ratio_spread_id = new_generic_spread_id([
     (call_leg, 1),   # Long 1 contract
     (put_leg, 2),    # Long 2 contracts
 ])
@@ -1833,4 +1833,4 @@ if not instruments:
 - **IB API Documentation**: [TWS API Guide](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/)
 - **NautilusTrader Examples**: [GitHub Examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers)
 - **IB Contract Search**: [Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/)
-- **Market Data Subscriptions**: [IB Market Data](https://www.interactivebrokers.com/en/trading/market-data.php)
+- **Market Data Subscriptions**: [IB Market Data](https://www.interactivebrokers.com/en/pricing/market-data-pricing.php)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -143,7 +143,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         )
         if account_info.canTrade:
             self._log.info("Binance API key authenticated.", LogColor.GREEN)
-            self._log.info(f"API key {self._http_client.api_key} has trading permissions")
+            self._log.info(f"API key {self._http_client.api_key_masked} has trading permissions")
         else:
             self._log.error("Binance API key does not have trading permissions")
         self.generate_account_state(

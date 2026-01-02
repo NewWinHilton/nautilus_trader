@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Final
+
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
 
-BITMEX_VENUE = Venue("BITMEX")
-BITMEX = BITMEX_VENUE.value
-BITMEX_CLIENT_ID = ClientId(BITMEX)
+BITMEX: Final[str] = "BITMEX"
+BITMEX_VENUE: Final[Venue] = Venue(BITMEX)
+BITMEX_CLIENT_ID: Final[ClientId] = ClientId(BITMEX)

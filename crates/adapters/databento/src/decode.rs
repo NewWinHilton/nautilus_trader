@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,37 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! Databento message decoding functions.
+//!
+//! # Sentinel Values
+//!
+//! Databento uses sentinel values to represent undefined/null fields:
+//!
+//! | Sentinel          | Value      | Usage                       |
+//! |-------------------|------------|-----------------------------|
+//! | `UNDEF_PRICE`     | `i64::MAX` | Undefined price fields.     |
+//! | `UNDEF_TIMESTAMP` | `u64::MAX` | Undefined timestamp fields. |
+//!
+//! # Fields Potentially Undefined
+//!
+//! According to Databento documentation, the following fields can contain sentinel values:
+//!
+//! | Message Type       | Field                          | Handling                           |
+//! |--------------------|--------------------------------|------------------------------------|
+//! | `MboMsg`           | `price`                        | Passed through as `PRICE_UNDEF`.   |
+//! | `TradeMsg`         | `price`                        | Passed through as `PRICE_UNDEF`.   |
+//! | `OhlcvMsg`         | `open`, `high`, `low`, `close` | Passed through as `PRICE_UNDEF`.   |
+//! | `Mbp1Msg`          | `bid_px`, `ask_px`             | Quote skipped if either undefined. |
+//! | `InstrumentDefMsg` | `activation`                   | Defaults to 0 (epoch).             |
+//! | `InstrumentDefMsg` | `expiration`                   | Returns error if undefined.        |
+//! | `InstrumentDefMsg` | `strike_price`                 | Returns error if undefined.        |
+//!
+//! # References
+//!
+//! - [`UNDEF_PRICE`](https://docs.rs/dbn/latest/dbn/constant.UNDEF_PRICE.html)
+//! - [`UNDEF_TIMESTAMP`](https://docs.rs/dbn/latest/dbn/constant.UNDEF_TIMESTAMP.html)
+//! - [Databento DBN Schema](https://databento.com/docs/schemas)
 
 use std::{ffi::c_char, num::NonZeroUsize};
 
@@ -248,42 +279,104 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
     Ok(Some(Ustr::from(value_str)))
 }
 
-/// Decodes a price from the given value, expressed in units of 1e-9.
+/// Decodes a price, returning an error if undefined.
+///
+/// Databento uses `i64::MAX` as a sentinel value for unset/null prices (see
+/// [`UNDEF_PRICE`](https://docs.rs/dbn/latest/dbn/constant.UNDEF_PRICE.html)).
+///
+/// # Errors
+///
+/// Returns an error if `value` is `i64::MAX` (undefined).
+#[inline(always)]
+pub fn decode_price(value: i64, precision: u8, field_name: &str) -> anyhow::Result<Price> {
+    if value == i64::MAX {
+        anyhow::bail!("Missing required price for `{field_name}`")
+    } else {
+        Ok(Price::from_raw(decode_raw_price_i64(value), precision))
+    }
+}
+
+/// Decodes a price from the given optional value, expressed in units of 1e-9.
+///
+/// Databento uses `i64::MAX` as a sentinel value for unset/null prices (see
+/// [`UNDEF_PRICE`](https://docs.rs/dbn/latest/dbn/constant.UNDEF_PRICE.html)).
+#[inline(always)]
 #[must_use]
-pub fn decode_price(value: i64, precision: u8) -> Price {
-    Price::from_raw(decode_raw_price_i64(value), precision)
+pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
+    if value == i64::MAX {
+        None
+    } else {
+        Some(Price::from_raw(decode_raw_price_i64(value), precision))
+    }
+}
+
+/// Decodes a price, returning `PRICE_UNDEF` if the value is undefined.
+///
+/// This is used for market data where undefined prices should pass through
+/// as `PRICE_UNDEF` rather than causing an error.
+#[inline(always)]
+#[must_use]
+pub fn decode_price_or_undef(value: i64, precision: u8) -> Price {
+    if value == i64::MAX {
+        Price::from_raw(PRICE_UNDEF, 0)
+    } else {
+        Price::from_raw(decode_raw_price_i64(value), precision)
+    }
+}
+
+/// Decodes a minimum price increment from the given value, expressed in units of 1e-9.
+#[inline(always)]
+#[must_use]
+pub fn decode_price_increment(value: i64, precision: u8) -> Price {
+    match value {
+        0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
+        _ => Price::from_raw(decode_raw_price_i64(value), precision),
+    }
 }
 
 /// Decodes a quantity from the given value, expressed in standard whole-number units.
+#[inline(always)]
 #[must_use]
 pub fn decode_quantity(value: u64) -> Quantity {
     Quantity::from(value)
 }
 
-/// Decodes a minimum price increment from the given value, expressed in units of 1e-9.
-#[must_use]
-pub fn decode_price_increment(value: i64, precision: u8) -> Price {
-    match value {
-        0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
-        _ => decode_price(value, precision),
-    }
-}
-
-/// Decodes a price from the given optional value, expressed in units of 1e-9.
-#[must_use]
-pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
-    match value {
-        i64::MAX => None,
-        _ => Some(decode_price(value, precision)),
-    }
-}
-
 /// Decodes a quantity from the given optional value, where `i64::MAX` indicates missing data.
+#[inline(always)]
 #[must_use]
 pub fn decode_optional_quantity(value: i64) -> Option<Quantity> {
     match value {
         i64::MAX => None,
         _ => Some(Quantity::from(value)),
+    }
+}
+
+/// Decodes a timestamp, returning an error if undefined.
+///
+/// Databento uses `u64::MAX` as `UNDEF_TIMESTAMP` sentinel for null timestamps.
+///
+/// # Errors
+///
+/// Returns an error if `value` is `u64::MAX` (undefined).
+#[inline(always)]
+pub fn decode_timestamp(value: u64, field_name: &str) -> anyhow::Result<UnixNanos> {
+    if value == dbn::UNDEF_TIMESTAMP {
+        anyhow::bail!("Missing required timestamp for `{field_name}`")
+    } else {
+        Ok(UnixNanos::from(value))
+    }
+}
+
+/// Decodes a timestamp from the given optional value.
+///
+/// Databento uses `u64::MAX` as `UNDEF_TIMESTAMP` sentinel for null timestamps.
+#[inline(always)]
+#[must_use]
+pub fn decode_optional_timestamp(value: u64) -> Option<UnixNanos> {
+    if value == dbn::UNDEF_TIMESTAMP {
+        None
+    } else {
+        Some(UnixNanos::from(value))
     }
 }
 
@@ -324,6 +417,7 @@ pub fn decode_multiplier(value: i64) -> anyhow::Result<Quantity> {
 }
 
 /// Decodes a lot size from the given value, expressed in standard whole-number units.
+#[inline(always)]
 #[must_use]
 pub fn decode_lot_size(value: i32) -> Quantity {
     match value {
@@ -332,9 +426,20 @@ pub fn decode_lot_size(value: i32) -> Quantity {
     }
 }
 
+#[inline(always)]
 #[must_use]
 fn is_trade_msg(action: c_char) -> bool {
     action as u8 as char == 'T'
+}
+
+/// Returns `true` if both bid and ask prices are defined (not `i64::MAX`).
+///
+/// Databento uses `i64::MAX` as a sentinel value for undefined/null prices.
+/// A valid quote requires both sides to be defined.
+#[inline(always)]
+#[must_use]
+fn has_valid_bid_ask(bid_px: i64, ask_px: i64) -> bool {
+    bid_px != i64::MAX && ask_px != i64::MAX
 }
 
 /// Decodes a Databento MBO (Market by Order) message into an order book delta or trade.
@@ -355,8 +460,8 @@ pub fn decode_mbo_msg(
     let side = parse_order_side(msg.side);
     if is_trade_msg(msg.action) {
         if include_trades && msg.size > 0 {
-            let price = Price::from_raw(decode_raw_price_i64(msg.price), price_precision);
-            let size = Quantity::from(msg.size);
+            let price = decode_price_or_undef(msg.price, price_precision);
+            let size = decode_quantity(msg.size as u64);
             let aggressor_side = parse_aggressor_side(msg.side);
             let trade_id = TradeId::new(itoa::Buffer::new().format(msg.sequence));
             let ts_event = msg.ts_recv.into();
@@ -378,12 +483,8 @@ pub fn decode_mbo_msg(
     }
 
     let action = parse_book_action(msg.action)?;
-    let price = if msg.price == i64::MAX {
-        Price::from_raw(PRICE_UNDEF, 0)
-    } else {
-        Price::from_raw(decode_raw_price_i64(msg.price), price_precision)
-    };
-    let size = Quantity::from(msg.size);
+    let price = decode_price_or_undef(msg.price, price_precision);
+    let size = decode_quantity(msg.size as u64);
     let order = BookOrder::new(side, price, size, msg.order_id);
 
     let ts_event = msg.ts_recv.into();
@@ -418,8 +519,8 @@ pub fn decode_trade_msg(
 
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
-        Quantity::from(msg.size),
+        decode_price_or_undef(msg.price, price_precision),
+        decode_quantity(msg.size as u64),
         parse_aggressor_side(msg.side),
         TradeId::new(itoa::Buffer::new().format(msg.sequence)),
         ts_event,
@@ -431,6 +532,9 @@ pub fn decode_trade_msg(
 
 /// Decodes a Databento TBBO (Top of Book with Trade) message into quote and trade ticks.
 ///
+/// Returns `None` for the quote if either bid or ask price is undefined (`i64::MAX`).
+/// The trade is always returned.
+///
 /// # Errors
 ///
 /// Returns an error if decoding the TBBO message fails.
@@ -439,35 +543,41 @@ pub fn decode_tbbo_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
-) -> anyhow::Result<(QuoteTick, TradeTick)> {
+) -> anyhow::Result<(Option<QuoteTick>, TradeTick)> {
     let top_level = &msg.levels[0];
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    let quote = QuoteTick::new(
-        instrument_id,
-        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
-        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
-        Quantity::from(top_level.bid_sz),
-        Quantity::from(top_level.ask_sz),
-        ts_event,
-        ts_init,
-    );
+    let maybe_quote = if has_valid_bid_ask(top_level.bid_px, top_level.ask_px) {
+        Some(QuoteTick::new(
+            instrument_id,
+            decode_price_or_undef(top_level.bid_px, price_precision),
+            decode_price_or_undef(top_level.ask_px, price_precision),
+            decode_quantity(top_level.bid_sz as u64),
+            decode_quantity(top_level.ask_sz as u64),
+            ts_event,
+            ts_init,
+        ))
+    } else {
+        None
+    };
 
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
-        Quantity::from(msg.size),
+        decode_price_or_undef(msg.price, price_precision),
+        decode_quantity(msg.size as u64),
         parse_aggressor_side(msg.side),
         TradeId::new(itoa::Buffer::new().format(msg.sequence)),
         ts_event,
         ts_init,
     );
 
-    Ok((quote, trade))
+    Ok((maybe_quote, trade))
 }
 
 /// Decodes a Databento MBP1 (Market by Price Level 1) message into quote and optional trade ticks.
+///
+/// Returns `None` for the quote if either bid or ask price is undefined (`i64::MAX`).
 ///
 /// # Errors
 ///
@@ -478,26 +588,30 @@ pub fn decode_mbp1_msg(
     price_precision: u8,
     ts_init: Option<UnixNanos>,
     include_trades: bool,
-) -> anyhow::Result<(QuoteTick, Option<TradeTick>)> {
+) -> anyhow::Result<(Option<QuoteTick>, Option<TradeTick>)> {
     let top_level = &msg.levels[0];
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    let quote = QuoteTick::new(
-        instrument_id,
-        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
-        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
-        Quantity::from(top_level.bid_sz),
-        Quantity::from(top_level.ask_sz),
-        ts_event,
-        ts_init,
-    );
+    let maybe_quote = if has_valid_bid_ask(top_level.bid_px, top_level.ask_px) {
+        Some(QuoteTick::new(
+            instrument_id,
+            decode_price_or_undef(top_level.bid_px, price_precision),
+            decode_price_or_undef(top_level.ask_px, price_precision),
+            decode_quantity(top_level.bid_sz as u64),
+            decode_quantity(top_level.ask_sz as u64),
+            ts_event,
+            ts_init,
+        ))
+    } else {
+        None
+    };
 
-    let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
+    let maybe_trade = if include_trades && is_trade_msg(msg.action) {
         Some(TradeTick::new(
             instrument_id,
-            Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
-            Quantity::from(msg.size),
+            decode_price_or_undef(msg.price, price_precision),
+            decode_quantity(msg.size as u64),
             parse_aggressor_side(msg.side),
             TradeId::new(itoa::Buffer::new().format(msg.sequence)),
             ts_event,
@@ -507,10 +621,12 @@ pub fn decode_mbp1_msg(
         None
     };
 
-    Ok((quote, maybe_trade))
+    Ok((maybe_quote, maybe_trade))
 }
 
 /// Decodes a Databento BBO (Best Bid and Offer) message into a `QuoteTick`.
+///
+/// Returns `None` if either bid or ask price is undefined (`i64::MAX`).
 ///
 /// # Errors
 ///
@@ -520,22 +636,26 @@ pub fn decode_bbo_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
-) -> anyhow::Result<QuoteTick> {
+) -> anyhow::Result<Option<QuoteTick>> {
     let top_level = &msg.levels[0];
+    if !has_valid_bid_ask(top_level.bid_px, top_level.ask_px) {
+        return Ok(None);
+    }
+
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
-        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
-        Quantity::from(top_level.bid_sz),
-        Quantity::from(top_level.ask_sz),
+        decode_price_or_undef(top_level.bid_px, price_precision),
+        decode_price_or_undef(top_level.ask_px, price_precision),
+        decode_quantity(top_level.bid_sz as u64),
+        decode_quantity(top_level.ask_sz as u64),
         ts_event,
         ts_init,
     );
 
-    Ok(quote)
+    Ok(Some(quote))
 }
 
 /// Decodes a Databento MBP10 (Market by Price 10 levels) message into an `OrderBookDepth10`.
@@ -557,15 +677,15 @@ pub fn decode_mbp10_msg(
     for level in &msg.levels {
         let bid_order = BookOrder::new(
             OrderSide::Buy,
-            Price::from_raw(decode_raw_price_i64(level.bid_px), price_precision),
-            Quantity::from(level.bid_sz),
+            decode_price_or_undef(level.bid_px, price_precision),
+            decode_quantity(level.bid_sz as u64),
             0,
         );
 
         let ask_order = BookOrder::new(
             OrderSide::Sell,
-            Price::from_raw(decode_raw_price_i64(level.ask_px), price_precision),
-            Quantity::from(level.ask_sz),
+            decode_price_or_undef(level.ask_px, price_precision),
+            decode_quantity(level.ask_sz as u64),
             0,
         );
 
@@ -623,7 +743,8 @@ pub fn decode_mbp10_msg(
 
 /// Decodes a Databento CMBP1 (Consolidated Market by Price Level 1) message.
 ///
-/// Returns a tuple containing a `QuoteTick` and an optional `TradeTick` based on the message content.
+/// Returns a tuple containing an optional `QuoteTick` and an optional `TradeTick`.
+/// Returns `None` for the quote if either bid or ask price is undefined (`i64::MAX`).
 ///
 /// # Errors
 ///
@@ -634,29 +755,18 @@ pub fn decode_cmbp1_msg(
     price_precision: u8,
     ts_init: Option<UnixNanos>,
     include_trades: bool,
-) -> anyhow::Result<(QuoteTick, Option<TradeTick>)> {
+) -> anyhow::Result<(Option<QuoteTick>, Option<TradeTick>)> {
     let top_level = &msg.levels[0];
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    let quote = QuoteTick::new(
-        instrument_id,
-        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
-        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
-        Quantity::from(top_level.bid_sz),
-        Quantity::from(top_level.ask_sz),
-        ts_event,
-        ts_init,
-    );
-
-    let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
-        // Use UUID4 for trade ID as CMBP1 doesn't have a sequence field
-        Some(TradeTick::new(
+    let maybe_quote = if has_valid_bid_ask(top_level.bid_px, top_level.ask_px) {
+        Some(QuoteTick::new(
             instrument_id,
-            Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
-            Quantity::from(msg.size),
-            parse_aggressor_side(msg.side),
-            TradeId::new(UUID4::new().to_string()),
+            decode_price_or_undef(top_level.bid_px, price_precision),
+            decode_price_or_undef(top_level.ask_px, price_precision),
+            decode_quantity(top_level.bid_sz as u64),
+            decode_quantity(top_level.ask_sz as u64),
             ts_event,
             ts_init,
         ))
@@ -664,12 +774,27 @@ pub fn decode_cmbp1_msg(
         None
     };
 
-    Ok((quote, maybe_trade))
+    let maybe_trade = if include_trades && is_trade_msg(msg.action) {
+        // Use UUID4 for trade ID as CMBP1 doesn't have a sequence field
+        Some(TradeTick::new(
+            instrument_id,
+            decode_price_or_undef(msg.price, price_precision),
+            decode_quantity(msg.size as u64),
+            parse_aggressor_side(msg.side),
+            TradeId::new(UUID4::new().as_str()),
+            ts_event,
+            ts_init,
+        ))
+    } else {
+        None
+    };
+
+    Ok((maybe_quote, maybe_trade))
 }
 
 /// Decodes a Databento CBBO (Consolidated Best Bid and Offer) message.
 ///
-/// Returns a `QuoteTick` representing the consolidated best bid and offer.
+/// Returns `None` if either bid or ask price is undefined (`i64::MAX`).
 ///
 /// # Errors
 ///
@@ -679,27 +804,32 @@ pub fn decode_cbbo_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
-) -> anyhow::Result<QuoteTick> {
+) -> anyhow::Result<Option<QuoteTick>> {
     let top_level = &msg.levels[0];
+    if !has_valid_bid_ask(top_level.bid_px, top_level.ask_px) {
+        return Ok(None);
+    }
+
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
-        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
-        Quantity::from(top_level.bid_sz),
-        Quantity::from(top_level.ask_sz),
+        decode_price_or_undef(top_level.bid_px, price_precision),
+        decode_price_or_undef(top_level.ask_px, price_precision),
+        decode_quantity(top_level.bid_sz as u64),
+        decode_quantity(top_level.ask_sz as u64),
         ts_event,
         ts_init,
     );
 
-    Ok(quote)
+    Ok(Some(quote))
 }
 
 /// Decodes a Databento TCBBO (Consolidated Top of Book with Trade) message.
 ///
-/// Returns a tuple containing both a `QuoteTick` and a `TradeTick`.
+/// Returns `None` for the quote if either bid or ask price is undefined (`i64::MAX`).
+/// The trade is always returned.
 ///
 /// # Errors
 ///
@@ -709,33 +839,37 @@ pub fn decode_tcbbo_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
-) -> anyhow::Result<(QuoteTick, TradeTick)> {
+) -> anyhow::Result<(Option<QuoteTick>, TradeTick)> {
     let top_level = &msg.levels[0];
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    let quote = QuoteTick::new(
-        instrument_id,
-        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
-        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
-        Quantity::from(top_level.bid_sz),
-        Quantity::from(top_level.ask_sz),
-        ts_event,
-        ts_init,
-    );
+    let maybe_quote = if has_valid_bid_ask(top_level.bid_px, top_level.ask_px) {
+        Some(QuoteTick::new(
+            instrument_id,
+            decode_price_or_undef(top_level.bid_px, price_precision),
+            decode_price_or_undef(top_level.ask_px, price_precision),
+            decode_quantity(top_level.bid_sz as u64),
+            decode_quantity(top_level.ask_sz as u64),
+            ts_event,
+            ts_init,
+        ))
+    } else {
+        None
+    };
 
     // Use UUID4 for trade ID as TCBBO doesn't have a sequence field
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
-        Quantity::from(msg.size),
+        decode_price_or_undef(msg.price, price_precision),
+        decode_quantity(msg.size as u64),
         parse_aggressor_side(msg.side),
-        TradeId::new(UUID4::new().to_string()),
+        TradeId::new(UUID4::new().as_str()),
         ts_event,
         ts_init,
     );
 
-    Ok((quote, trade))
+    Ok((maybe_quote, trade))
 }
 
 /// # Errors
@@ -830,11 +964,11 @@ pub fn decode_ohlcv_msg(
 
     let bar = Bar::new(
         bar_type,
-        Price::from_raw(decode_raw_price_i64(msg.open), price_precision),
-        Price::from_raw(decode_raw_price_i64(msg.high), price_precision),
-        Price::from_raw(decode_raw_price_i64(msg.low), price_precision),
-        Price::from_raw(decode_raw_price_i64(msg.close), price_precision),
-        Quantity::from(msg.volume),
+        decode_price_or_undef(msg.open, price_precision),
+        decode_price_or_undef(msg.high, price_precision),
+        decode_price_or_undef(msg.low, price_precision),
+        decode_price_or_undef(msg.close, price_precision),
+        decode_quantity(msg.volume),
         ts_event,
         ts_init,
     );
@@ -908,25 +1042,22 @@ pub fn decode_record(
         (Some(Data::Trade(trade)), None)
     } else if let Some(msg) = record.get::<dbn::Mbp1Msg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-        let result = decode_mbp1_msg(
+        let (maybe_quote, maybe_trade) = decode_mbp1_msg(
             msg,
             instrument_id,
             price_precision,
             Some(ts_init),
             include_trades,
         )?;
-        match result {
-            (quote, None) => (Some(Data::Quote(quote)), None),
-            (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
-        }
+        (maybe_quote.map(Data::Quote), maybe_trade.map(Data::Trade))
     } else if let Some(msg) = record.get::<dbn::Bbo1SMsg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-        let quote = decode_bbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
-        (Some(Data::Quote(quote)), None)
+        let maybe_quote = decode_bbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+        (maybe_quote.map(Data::Quote), None)
     } else if let Some(msg) = record.get::<dbn::Bbo1MMsg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-        let quote = decode_bbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
-        (Some(Data::Quote(quote)), None)
+        let maybe_quote = decode_bbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+        (maybe_quote.map(Data::Quote), None)
     } else if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let depth = decode_mbp10_msg(msg, instrument_id, price_precision, Some(ts_init))?;
@@ -944,35 +1075,33 @@ pub fn decode_record(
         (Some(Data::Bar(bar)), None)
     } else if let Some(msg) = record.get::<dbn::Cmbp1Msg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-        let result = decode_cmbp1_msg(
+        let (maybe_quote, maybe_trade) = decode_cmbp1_msg(
             msg,
             instrument_id,
             price_precision,
             Some(ts_init),
             include_trades,
         )?;
-        match result {
-            (quote, None) => (Some(Data::Quote(quote)), None),
-            (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
-        }
+        (maybe_quote.map(Data::Quote), maybe_trade.map(Data::Trade))
     } else if let Some(msg) = record.get::<dbn::TbboMsg>() {
-        // TBBO always has both quote and trade
+        // TBBO always has a trade, quote may be skipped if prices undefined
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-        let (quote, trade) = decode_tbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
-        (Some(Data::Quote(quote)), Some(Data::Trade(trade)))
+        let (maybe_quote, trade) =
+            decode_tbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+        (maybe_quote.map(Data::Quote), Some(Data::Trade(trade)))
     } else if let Some(msg) = record.get::<dbn::CbboMsg>() {
         // Check if this is a TCBBO or regular CBBO based on whether it has trade data
         if msg.price != i64::MAX && msg.size > 0 {
-            // TCBBO - has both quote and trade
+            // TCBBO - has a trade, quote may be skipped if prices undefined
             let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-            let (quote, trade) =
+            let (maybe_quote, trade) =
                 decode_tcbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
-            (Some(Data::Quote(quote)), Some(Data::Trade(trade)))
+            (maybe_quote.map(Data::Quote), Some(Data::Trade(trade)))
         } else {
-            // Regular CBBO - quote only
+            // Regular CBBO - quote only (may be None if prices undefined)
             let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
-            let quote = decode_cbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
-            (Some(Data::Quote(quote)), None)
+            let maybe_quote = decode_cbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+            (maybe_quote.map(Data::Quote), None)
         }
     } else {
         anyhow::bail!("DBN message type is not currently supported")
@@ -1094,8 +1223,8 @@ pub fn decode_futures_contract(
         asset_class.unwrap_or(AssetClass::Commodity),
         Some(exchange),
         underlying,
-        msg.activation.into(),
-        msg.expiration.into(),
+        decode_optional_timestamp(msg.activation).unwrap_or_default(),
+        decode_timestamp(msg.expiration, "expiration")?,
         currency,
         price_increment.precision,
         price_increment,
@@ -1142,8 +1271,8 @@ pub fn decode_futures_spread(
         Some(exchange),
         underlying,
         strategy_type,
-        msg.activation.into(),
-        msg.expiration.into(),
+        decode_optional_timestamp(msg.activation).unwrap_or_default(),
+        decode_timestamp(msg.expiration, "expiration")?,
         currency,
         price_increment.precision,
         price_increment,
@@ -1183,10 +1312,11 @@ pub fn decode_option_contract(
         asset_class
     };
     let option_kind = parse_option_kind(msg.instrument_class)?;
-    let strike_price = Price::from_raw(
-        decode_raw_price_i64(msg.strike_price),
+    let strike_price = decode_price(
+        msg.strike_price,
         strike_price_currency.precision,
-    );
+        "strike_price",
+    )?;
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
     let multiplier = decode_multiplier(msg.unit_of_measure_qty)?;
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
@@ -1202,8 +1332,8 @@ pub fn decode_option_contract(
         option_kind,
         strike_price,
         currency,
-        msg.activation.into(),
-        msg.expiration.into(),
+        decode_optional_timestamp(msg.activation).unwrap_or_default(),
+        decode_timestamp(msg.expiration, "expiration")?,
         price_increment.precision,
         price_increment,
         multiplier,
@@ -1254,8 +1384,8 @@ pub fn decode_option_spread(
         Some(exchange),
         underlying,
         strategy_type,
-        msg.activation.into(),
-        msg.expiration.into(),
+        decode_optional_timestamp(msg.activation).unwrap_or_default(),
+        decode_timestamp(msg.expiration, "expiration")?,
         currency,
         price_increment.precision,
         price_increment,
@@ -1290,15 +1420,9 @@ pub fn decode_imbalance_msg(
 
     Ok(DatabentoImbalance::new(
         instrument_id,
-        Price::from_raw(decode_raw_price_i64(msg.ref_price), price_precision),
-        Price::from_raw(
-            decode_raw_price_i64(msg.cont_book_clr_price),
-            price_precision,
-        ),
-        Price::from_raw(
-            decode_raw_price_i64(msg.auct_interest_clr_price),
-            price_precision,
-        ),
+        decode_price_or_undef(msg.ref_price, price_precision),
+        decode_price_or_undef(msg.cont_book_clr_price, price_precision),
+        decode_price_or_undef(msg.auct_interest_clr_price, price_precision),
         Quantity::new(f64::from(msg.paired_qty), 0),
         Quantity::new(f64::from(msg.total_imbalance_qty), 0),
         parse_order_side(msg.side),
@@ -1347,9 +1471,6 @@ pub fn decode_statistics_msg(
     ))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -1455,10 +1576,37 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0, 2, Price::from_raw(0, 2))]
+    #[case(
+        1_000_000_000,
+        2,
+        Price::from_raw(decode_raw_price_i64(1_000_000_000), 2)
+    )]
+    fn test_decode_price(#[case] value: i64, #[case] precision: u8, #[case] expected: Price) {
+        let actual = decode_price(value, precision, "test_field").unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_decode_price_undefined_errors() {
+        let result = decode_price(i64::MAX, 2, "strike_price");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("strike_price"));
+    }
+
+    #[rstest]
     #[case(0, 2, Price::new(0.01, 2))] // Default for 0
     #[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
-    #[case(1000000, 2, Price::from_raw(decode_raw_price_i64(1000000), 2))] // Arbitrary valid price
-    fn test_decode_price(#[case] value: i64, #[case] precision: u8, #[case] expected: Price) {
+    #[case(
+        10_000_000_000,
+        2,
+        Price::from_raw(decode_raw_price_i64(10_000_000_000), 2)
+    )]
+    fn test_decode_price_increment(
+        #[case] value: i64,
+        #[case] precision: u8,
+        #[case] expected: Price,
+    ) {
         let actual = decode_price_increment(value, precision);
         assert_eq!(actual, expected);
     }
@@ -1466,7 +1614,11 @@ mod tests {
     #[rstest]
     #[case(i64::MAX, 2, None)] // None for i64::MAX
     #[case(0, 2, Some(Price::from_raw(0, 2)))] // 0 is valid here
-    #[case(1000000, 2, Some(Price::from_raw(decode_raw_price_i64(1000000), 2)))] // Arbitrary valid price
+    #[case(
+        10_000_000_000,
+        2,
+        Some(Price::from_raw(decode_raw_price_i64(10_000_000_000), 2))
+    )]
     fn test_decode_optional_price(
         #[case] value: i64,
         #[case] precision: u8,
@@ -1477,11 +1629,52 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0, 2, Price::from_raw(0, 2))]
+    #[case(
+        1_000_000_000,
+        2,
+        Price::from_raw(decode_raw_price_i64(1_000_000_000), 2)
+    )]
+    #[case(i64::MAX, 2, Price::from_raw(PRICE_UNDEF, 0))] // Sentinel becomes PRICE_UNDEF
+    fn test_decode_price_or_undef(
+        #[case] value: i64,
+        #[case] precision: u8,
+        #[case] expected: Price,
+    ) {
+        let actual = decode_price_or_undef(value, precision);
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
     #[case(i64::MAX, None)] // None for i32::MAX
     #[case(0, Some(Quantity::new(0.0, 0)))] // 0 is valid quantity
     #[case(10, Some(Quantity::new(10.0, 0)))] // Arbitrary valid quantity
     fn test_decode_optional_quantity(#[case] value: i64, #[case] expected: Option<Quantity>) {
         let actual = decode_optional_quantity(value);
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case(0, UnixNanos::from(0))]
+    #[case(1_000_000_000, UnixNanos::from(1_000_000_000))]
+    fn test_decode_timestamp(#[case] value: u64, #[case] expected: UnixNanos) {
+        let actual = decode_timestamp(value, "test_field").unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_decode_timestamp_undefined_errors() {
+        let result = decode_timestamp(dbn::UNDEF_TIMESTAMP, "expiration");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("expiration"));
+    }
+
+    #[rstest]
+    #[case(0, Some(UnixNanos::from(0)))]
+    #[case(1_000_000_000, Some(UnixNanos::from(1_000_000_000)))]
+    #[case(dbn::UNDEF_TIMESTAMP, None)]
+    fn test_decode_optional_timestamp(#[case] value: u64, #[case] expected: Option<UnixNanos>) {
+        let actual = decode_optional_timestamp(value);
         assert_eq!(actual, expected);
     }
 
@@ -1520,18 +1713,6 @@ mod tests {
     #[case(5, Quantity::from(5))]
     fn test_decode_quantity(#[case] value: u64, #[case] expected: Quantity) {
         assert_eq!(decode_quantity(value), expected);
-    }
-
-    #[rstest]
-    #[case(0, 2, Price::new(0.01, 2))] // Default for 0
-    #[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
-    #[case(1000000, 2, Price::from_raw(decode_raw_price_i64(1000000), 2))] // Arbitrary valid price
-    fn test_decode_price_increment(
-        #[case] value: i64,
-        #[case] precision: u8,
-        #[case] expected: Price,
-    ) {
-        assert_eq!(decode_price_increment(value, precision), expected);
     }
 
     #[rstest]
@@ -1641,6 +1822,35 @@ mod tests {
         assert_eq!(delta.sequence, 1_000_000);
         assert_eq!(delta.ts_event, ts_recv);
         assert_eq!(delta.ts_init, 0);
+        assert!(delta.order.price.is_undefined());
+        assert_eq!(delta.order.price.precision, 0);
+    }
+
+    #[rstest]
+    fn test_decode_mbo_msg_price_undef_with_precision() {
+        // Test that PRICE_UNDEF (i64::MAX) forces precision to 0 even when price_precision is non-zero
+        let ts_recv = 1_609_160_400_000_000_000;
+        let msg = dbn::MboMsg {
+            hd: dbn::RecordHeader::new::<dbn::MboMsg>(1, 1, ts_recv as u32, 0),
+            order_id: 0,
+            price: i64::MAX, // PRICE_UNDEF
+            size: 0,
+            flags: dbn::FlagSet::empty(),
+            channel_id: 0,
+            action: 'R' as c_char, // Clear
+            side: 'N' as c_char,   // NoOrderSide
+            ts_recv,
+            ts_in_delta: 0,
+            sequence: 0,
+        };
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (delta, _) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+        let delta = delta.unwrap();
+
+        assert!(delta.order.price.is_undefined());
+        assert_eq!(delta.order.price.precision, 0);
+        assert_eq!(delta.order.price.raw, PRICE_UNDEF);
     }
 
     #[rstest]
@@ -1683,7 +1893,9 @@ mod tests {
         let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let (quote, _) = decode_mbp1_msg(msg, instrument_id, 2, Some(0.into()), false).unwrap();
+        let (maybe_quote, _) =
+            decode_mbp1_msg(msg, instrument_id, 2, Some(0.into()), false).unwrap();
+        let quote = maybe_quote.expect("Expected valid quote");
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("3720.25"));
@@ -1696,6 +1908,108 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_mbp1_msg_undefined_ask_skips_quote() {
+        let ts_recv = 1_609_160_400_000_000_000;
+        let msg = dbn::Mbp1Msg {
+            hd: dbn::RecordHeader::new::<dbn::Mbp1Msg>(1, 1, ts_recv as u32, 0),
+            price: 3_720_250_000_000, // Valid trade price
+            size: 5,
+            action: 'A' as c_char,
+            side: 'B' as c_char,
+            flags: dbn::FlagSet::empty(),
+            depth: 0,
+            ts_recv,
+            ts_in_delta: 0,
+            sequence: 1_170_352,
+            levels: [dbn::BidAskPair {
+                bid_px: 3_720_250_000_000, // Valid bid price
+                ask_px: i64::MAX,          // Undefined ask price
+                bid_sz: 24,
+                ask_sz: 0,
+                bid_ct: 1,
+                ask_ct: 0,
+            }],
+        };
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (maybe_quote, _) =
+            decode_mbp1_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+
+        // Quote should be None because ask price is undefined
+        assert!(maybe_quote.is_none());
+    }
+
+    #[rstest]
+    fn test_decode_mbp1_msg_undefined_bid_skips_quote() {
+        let ts_recv = 1_609_160_400_000_000_000;
+        let msg = dbn::Mbp1Msg {
+            hd: dbn::RecordHeader::new::<dbn::Mbp1Msg>(1, 1, ts_recv as u32, 0),
+            price: 3_720_500_000_000, // Valid trade price
+            size: 5,
+            action: 'A' as c_char,
+            side: 'A' as c_char,
+            flags: dbn::FlagSet::empty(),
+            depth: 0,
+            ts_recv,
+            ts_in_delta: 0,
+            sequence: 1_170_352,
+            levels: [dbn::BidAskPair {
+                bid_px: i64::MAX,          // Undefined bid price
+                ask_px: 3_720_500_000_000, // Valid ask price
+                bid_sz: 0,
+                ask_sz: 11,
+                bid_ct: 0,
+                ask_ct: 1,
+            }],
+        };
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (maybe_quote, _) =
+            decode_mbp1_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+
+        // Quote should be None because bid price is undefined
+        assert!(maybe_quote.is_none());
+    }
+
+    #[rstest]
+    fn test_decode_mbp1_msg_trade_still_returned_with_undefined_prices() {
+        let ts_recv = 1_609_160_400_000_000_000;
+        let msg = dbn::Mbp1Msg {
+            hd: dbn::RecordHeader::new::<dbn::Mbp1Msg>(1, 1, ts_recv as u32, 0),
+            price: 3_720_250_000_000, // Valid trade price
+            size: 5,
+            action: 'T' as c_char, // Trade action
+            side: 'A' as c_char,
+            flags: dbn::FlagSet::empty(),
+            depth: 0,
+            ts_recv,
+            ts_in_delta: 0,
+            sequence: 1_170_352,
+            levels: [dbn::BidAskPair {
+                bid_px: i64::MAX, // Undefined bid
+                ask_px: i64::MAX, // Undefined ask
+                bid_sz: 0,
+                ask_sz: 0,
+                bid_ct: 0,
+                ask_ct: 0,
+            }],
+        };
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (maybe_quote, maybe_trade) =
+            decode_mbp1_msg(&msg, instrument_id, 2, Some(0.into()), true).unwrap();
+
+        // Quote should be None because both prices are undefined
+        assert!(maybe_quote.is_none());
+
+        // Trade should still be present
+        let trade = maybe_trade.expect("Expected trade");
+        assert_eq!(trade.instrument_id, instrument_id);
+        assert_eq!(trade.price, Price::from("3720.25"));
+        assert_eq!(trade.size, Quantity::from("5"));
+    }
+
+    #[rstest]
     fn test_decode_bbo_1s_msg() {
         let path = test_data_path().join("test_data.bbo-1s.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
@@ -1704,7 +2018,8 @@ mod tests {
         let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let quote = decode_bbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let maybe_quote = decode_bbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let quote = maybe_quote.expect("Expected valid quote");
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("3702.25"));
@@ -1725,7 +2040,8 @@ mod tests {
         let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let quote = decode_bbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let maybe_quote = decode_bbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let quote = maybe_quote.expect("Expected valid quote");
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("3702.25"));
@@ -1790,7 +2106,8 @@ mod tests {
         let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let (quote, trade) = decode_tbbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let (maybe_quote, trade) = decode_tbbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let quote = maybe_quote.expect("Expected valid quote");
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("3720.25"));
@@ -1934,7 +2251,9 @@ mod tests {
         let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let (quote, trade) = decode_cmbp1_msg(msg, instrument_id, 2, Some(0.into()), true).unwrap();
+        let (maybe_quote, trade) =
+            decode_cmbp1_msg(msg, instrument_id, 2, Some(0.into()), true).unwrap();
+        let quote = maybe_quote.expect("Expected valid quote");
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert!(quote.bid_price.raw > 0);
@@ -1945,7 +2264,7 @@ mod tests {
         assert_eq!(quote.ts_init, 0);
 
         // Check if trade is present based on action
-        if msg.action as u8 as char == 'T' {
+        if is_trade_msg(msg.action) {
             assert!(trade.is_some());
             let trade = trade.unwrap();
             assert_eq!(trade.instrument_id, instrument_id);
@@ -1963,7 +2282,8 @@ mod tests {
         let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let quote = decode_cbbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let maybe_quote = decode_cbbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let quote = maybe_quote.expect("Expected valid quote");
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert!(quote.bid_price.raw > 0);
@@ -2050,8 +2370,9 @@ mod tests {
         tcbbo_msg.size = 10;
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let (quote, trade) =
+        let (maybe_quote, trade) =
             decode_tcbbo_msg(&tcbbo_msg, instrument_id, 2, Some(0.into())).unwrap();
+        let quote = maybe_quote.expect("Expected valid quote");
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert!(quote.bid_price.raw > 0);

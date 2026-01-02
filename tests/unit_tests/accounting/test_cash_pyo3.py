@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -173,6 +173,7 @@ def test_calculate_pnls_for_single_currency_cash_account():
 def test_calculate_commission_when_given_liquidity_side_none_raises_value_error():
     account = TestAccountingProviderPyo3.cash_account_million_usd()
     instrument = TestInstrumentProviderPyo3.xbtusd_bitmex()
+
     with pytest.raises(ValueError):
         account.calculate_commission(
             instrument=instrument,

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,10 @@ use nautilus_core::{
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
-    serialization::Serializable,
+    serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    },
 };
 use pyo3::{
     IntoPyObjectExt,
@@ -120,20 +123,20 @@ impl QuoteTick {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
-        let instrument_id_str: &str = binding.downcast::<PyString>()?.extract()?;
-        let bid_price_raw: PriceRaw = py_tuple.get_item(1)?.downcast::<PyInt>()?.extract()?;
-        let ask_price_raw: PriceRaw = py_tuple.get_item(2)?.downcast::<PyInt>()?.extract()?;
-        let bid_price_prec: u8 = py_tuple.get_item(3)?.downcast::<PyInt>()?.extract()?;
-        let ask_price_prec: u8 = py_tuple.get_item(4)?.downcast::<PyInt>()?.extract()?;
+        let instrument_id_str: &str = binding.cast::<PyString>()?.extract()?;
+        let bid_price_raw: PriceRaw = py_tuple.get_item(1)?.cast::<PyInt>()?.extract()?;
+        let ask_price_raw: PriceRaw = py_tuple.get_item(2)?.cast::<PyInt>()?.extract()?;
+        let bid_price_prec: u8 = py_tuple.get_item(3)?.cast::<PyInt>()?.extract()?;
+        let ask_price_prec: u8 = py_tuple.get_item(4)?.cast::<PyInt>()?.extract()?;
 
-        let bid_size_raw: QuantityRaw = py_tuple.get_item(5)?.downcast::<PyInt>()?.extract()?;
-        let ask_size_raw: QuantityRaw = py_tuple.get_item(6)?.downcast::<PyInt>()?.extract()?;
-        let bid_size_prec: u8 = py_tuple.get_item(7)?.downcast::<PyInt>()?.extract()?;
-        let ask_size_prec: u8 = py_tuple.get_item(8)?.downcast::<PyInt>()?.extract()?;
-        let ts_event: u64 = py_tuple.get_item(9)?.downcast::<PyInt>()?.extract()?;
-        let ts_init: u64 = py_tuple.get_item(10)?.downcast::<PyInt>()?.extract()?;
+        let bid_size_raw: QuantityRaw = py_tuple.get_item(5)?.cast::<PyInt>()?.extract()?;
+        let ask_size_raw: QuantityRaw = py_tuple.get_item(6)?.cast::<PyInt>()?.extract()?;
+        let bid_size_prec: u8 = py_tuple.get_item(7)?.cast::<PyInt>()?.extract()?;
+        let ask_size_prec: u8 = py_tuple.get_item(8)?.cast::<PyInt>()?.extract()?;
+        let ts_event: u64 = py_tuple.get_item(9)?.cast::<PyInt>()?.extract()?;
+        let ts_init: u64 = py_tuple.get_item(10)?.cast::<PyInt>()?.extract()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
@@ -376,9 +379,6 @@ impl QuoteTick {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::python::IntoPyObjectNautilusExt;
@@ -393,16 +393,16 @@ mod tests {
 
     #[rstest]
     #[case(
-    Price::from_raw(10_000_000, 6),
-    Price::from_raw(10_001_000, 7), // Mismatched precision
-    Quantity::from_raw(1_000_000, 6),
-    Quantity::from_raw(1_000_000, 6),
+    Price::new(0.010000, 6),
+    Price::new(0.0100010, 7), // Mismatched precision
+    Quantity::new(0.001000, 6),
+    Quantity::new(0.001000, 6),
 )]
     #[case(
-    Price::from_raw(10_000_000, 6),
-    Price::from_raw(10_001_000, 6),
-    Quantity::from_raw(1_000_000, 6),
-    Quantity::from_raw(1_000_000, 7), // Mismatched precision
+    Price::new(0.010000, 6),
+    Price::new(0.010001, 6),
+    Quantity::new(0.001000, 6),
+    Quantity::new(0.0010000, 7), // Mismatched precision
 )]
     fn test_quote_tick_py_new_invalid_precisions(
         #[case] bid_price: Price,

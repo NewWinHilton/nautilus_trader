@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,6 +33,7 @@ use nautilus_model::{
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 
+use super::types::DatabentoSubscriptionAck;
 use crate::{
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
     symbology::{check_consistent_symbology, infer_symbology_type, instrument_id_to_symbol_string},
@@ -58,6 +59,7 @@ pub struct DatabentoLiveClient {
     symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
     use_exchange_as_venue: bool,
     bars_timestamp_on_close: bool,
+    reconnect_timeout_mins: Option<u64>,
 }
 
 impl DatabentoLiveClient {
@@ -99,6 +101,11 @@ impl DatabentoLiveClient {
                     let py_obj = data.into_py_any_unwrap(py);
                     call_python(py, &callback_pyo3, py_obj);
                 }),
+                LiveMessage::SubscriptionAck(ack) => Python::attach(|py| {
+                    let py_obj: DatabentoSubscriptionAck = ack.into();
+                    let py_obj = py_obj.into_py_any_unwrap(py);
+                    call_python(py, &callback_pyo3, py_obj);
+                }),
                 LiveMessage::Close => {
                     // Graceful close
                     break;
@@ -136,12 +143,14 @@ impl DatabentoLiveClient {
     ///
     /// Returns a `PyErr` if reading or parsing the publishers file fails.
     #[new]
+    #[pyo3(signature = (key, dataset, publishers_filepath, use_exchange_as_venue, bars_timestamp_on_close=None, reconnect_timeout_mins=None))]
     pub fn py_new(
         key: String,
         dataset: String,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: Option<bool>,
+        reconnect_timeout_mins: Option<i64>,
     ) -> PyResult<Self> {
         let publishers_json = fs::read_to_string(publishers_filepath).map_err(to_pyvalue_err)?;
         let publishers_vec: Vec<DatabentoPublisher> =
@@ -156,6 +165,10 @@ impl DatabentoLiveClient {
         // Hardcoded to a reasonable size for now
         let buffer_size = 100_000;
 
+        // Convert i64 to u64: None/negative = infinite retries, 0 = no retries, positive = timeout in minutes
+        let reconnect_timeout_mins = reconnect_timeout_mins
+            .and_then(|mins| if mins >= 0 { Some(mins as u64) } else { None });
+
         Ok(Self {
             key,
             dataset,
@@ -168,6 +181,7 @@ impl DatabentoLiveClient {
             symbol_venue_map: Arc::new(RwLock::new(AHashMap::new())),
             use_exchange_as_venue,
             bars_timestamp_on_close: bars_timestamp_on_close.unwrap_or(true),
+            reconnect_timeout_mins,
         })
     }
 
@@ -259,6 +273,7 @@ impl DatabentoLiveClient {
             self.symbol_venue_map.clone(),
             self.use_exchange_as_venue,
             self.bars_timestamp_on_close,
+            self.reconnect_timeout_mins,
         );
 
         self.send_command(LiveCommand::Start)?;

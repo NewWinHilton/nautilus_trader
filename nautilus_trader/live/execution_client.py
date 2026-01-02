@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,6 +32,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import MILLISECONDS_IN_SECOND
@@ -558,6 +559,21 @@ class LiveExecutionClient(ExecutionClient):
 
     def _log_account_registered(self) -> None:
         self._log.info(f"Account {self.account_id} registered in cache", LogColor.GREEN)
+
+    def _log_report_receipt(
+        self,
+        count: int,
+        report_type: str,
+        log_level: LogLevel,
+        verb: str = "Received",
+    ) -> None:
+        plural = "" if count == 1 else "s"
+        receipt_log = f"{verb} {count} {report_type}{plural}"
+
+        if log_level == LogLevel.INFO:
+            self._log.info(receipt_log)
+        else:
+            self._log.debug(receipt_log)
 
     ############################################################################
     # Coroutines to implement

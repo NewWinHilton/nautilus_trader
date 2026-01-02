@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,7 @@
 
 //! Domain types representing funding rate data for perpetual swap instruments.
 
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, hash::Hash};
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
@@ -54,7 +54,7 @@ impl PartialEq for FundingRateUpdate {
     }
 }
 
-impl std::hash::Hash for FundingRateUpdate {
+impl Hash for FundingRateUpdate {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // Hash only the fields used in PartialEq to maintain consistency
         self.instrument_id.hash(state);
@@ -124,10 +124,6 @@ impl HasTsInit for FundingRateUpdate {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -136,7 +132,10 @@ mod tests {
         str::FromStr,
     };
 
-    use nautilus_core::serialization::Serializable;
+    use nautilus_core::serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    };
     use rstest::{fixture, rstest};
     use serde_json;
 

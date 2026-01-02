@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,10 +20,10 @@ from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BinanceAccountType
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
 from nautilus_trader.config import CacheConfig
-from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -98,7 +98,10 @@ config_node = TradingNodeConfig(
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
             testnet=True,  # If client uses the testnet
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=BinanceInstrumentProviderConfig(
+                load_ids=frozenset([instrument_id]),
+                query_commission_rates=True,
+            ),
         ),
     },
     exec_clients={
@@ -110,10 +113,11 @@ config_node = TradingNodeConfig(
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
             testnet=True,  # If client uses the testnet
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=BinanceInstrumentProviderConfig(
+                load_ids=frozenset([instrument_id]),
+                query_commission_rates=True,
+            ),
             max_retries=3,
-            retry_delay_initial_ms=1_000,
-            retry_delay_max_ms=10_000,
             log_rejected_due_post_only_as_warning=False,
         ),
     },
@@ -135,14 +139,21 @@ strat_config = ExecTesterConfig(
     subscribe_quotes=True,
     subscribe_trades=True,
     order_qty=order_qty,
-    # order_params={"price_match": "QUEUE_5"},
-    # enable_buys=False,
-    # enable_sells=False,
     open_position_on_start_qty=order_qty,
+    # order_params={"price_match": "QUEUE_5"},
+    # enable_limit_buys=False,
+    # enable_limit_sells=False,
     # tob_offset_ticks=0,
+    # stop_offset_ticks=1,
+    # enable_stop_buys=True,
+    # enable_stop_sells=True,
+    # order_expire_time_delta_mins=11,
+    # modify_orders_to_maintain_tob_offset=True,
+    # modify_stop_orders_to_maintain_offset=True,
     # use_batch_cancel_on_stop=True,
     # use_individual_cancels_on_stop=True,
     use_post_only=True,
+    # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
     # log_rejected_due_post_only_as_warning=False,
     # test_reject_post_only=True,

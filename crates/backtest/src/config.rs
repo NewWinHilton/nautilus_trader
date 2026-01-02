@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,10 +32,9 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
 };
-use nautilus_persistence::config::StreamingConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
-use nautilus_system::config::NautilusKernelConfig;
+use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
 use ustr::Ustr;
 
 /// Configuration for ``BacktestEngine`` instances.
@@ -290,6 +289,9 @@ pub struct BacktestVenueConfig {
     default_leverage: Option<f64>,
     /// The instrument specific leverage configuration (for margin accounts).
     leverages: Option<HashMap<Currency, f64>>,
+    /// Defines an exchange-calculated price boundary to prevent a market order from being
+    /// filled at an extremely aggressive price.
+    price_protection_points: u32,
 }
 
 impl BacktestVenueConfig {
@@ -315,6 +317,7 @@ impl BacktestVenueConfig {
         base_currency: Option<Currency>,
         default_leverage: Option<f64>,
         leverages: Option<HashMap<Currency, f64>>,
+        price_protection_points: Option<u32>,
     ) -> Self {
         Self {
             name,
@@ -336,6 +339,7 @@ impl BacktestVenueConfig {
             base_currency,
             default_leverage,
             leverages,
+            price_protection_points: price_protection_points.unwrap_or(0),
         }
     }
 }

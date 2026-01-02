@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,26 +39,26 @@ def get_test_data_path(file_name: str) -> Path:
     return path
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument_provider():
     pass  # Not applicable
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     pass  # Not applicable
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client():
     pass  # Not applicable
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     pass  # Not applicable
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state():
     pass  # Not applicable

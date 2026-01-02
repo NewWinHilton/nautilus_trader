@@ -1,16 +1,12 @@
 # Portfolio
 
-:::info
-We are currently working on this concept guide.
-:::
-
 The Portfolio serves as the central hub for managing and tracking all positions across active strategies for the trading node or backtest.
 It consolidates position data from multiple instruments, providing a unified view of your holdings, risk exposure, and overall performance.
 Explore this section to understand how NautilusTrader aggregates and updates portfolio state to support effective trading and risk management.
 
 ## Portfolio statistics
 
-There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/analysis/statistics)
+There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/analysis/src/statistics)
 which are used to analyse a trading portfolios performance for both backtests and live trading.
 
 The statistics are generally categorized as follows.
@@ -60,23 +56,21 @@ stat = WinRate()
 
 # Register with the portfolio analyzer
 engine.portfolio.analyzer.register_statistic(stat)
+```
 
 :::info
 See the `PortfolioAnalyzer` [API Reference](../api_reference/analysis.md#class-portfolioanalyzer) for details on available methods.
 :::
-```
 
 :::tip
 Ensure your statistic is robust to degenerate inputs such as ``None``, empty series, or insufficient data.
-
-The expectation is that you would then return ``None``, NaN or a reasonable default.
+Return ``None`` for unknown/incalculable values, or a reasonable default like ``0.0`` when semantically appropriate (e.g., win rate with no trades).
 :::
 
 ## Backtest analysis
 
 Following a backtest run, a performance analysis will be carried out by passing realized PnLs, returns, positions and orders data to each registered
-statistic in turn, calculating their values (with a default configuration). Any output is then displayed in the tear sheet
-under the `Portfolio Performance` heading, grouped as.
+statistic in turn. Any output is then displayed in the tear sheet under the `Portfolio Performance` heading, grouped as:
 
 - Realized PnL statistics (per currency)
 - Returns statistics (for the entire portfolio)

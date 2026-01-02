@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -81,6 +81,7 @@ class PortfolioAnalyzer:
         """
         self._account_balances_starting = {}
         self._account_balances = {}
+        self._positions = []
         self._realized_pnls = {}
         self._returns = pd.Series(dtype=float64)
 
@@ -139,11 +140,12 @@ class PortfolioAnalyzer:
         """
         self._account_balances_starting = account.starting_balances()
         self._account_balances = account.balances_total()
+        self._positions = []
         self._realized_pnls = {}
         self._returns = pd.Series(dtype=float64)
 
         self.add_positions(positions)
-        self._returns.sort_index()
+        self._returns = self._returns.sort_index()
 
     def add_positions(self, positions: list[Position]) -> None:
         """

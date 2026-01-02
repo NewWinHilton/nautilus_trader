@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,6 +19,7 @@
 
 pub mod config;
 pub mod database;
+pub mod quote;
 
 mod index;
 
@@ -26,7 +27,7 @@ mod index;
 mod tests;
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::VecDeque,
     fmt::Debug,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -42,7 +43,7 @@ use nautilus_core::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty,
         check_valid_string_ascii,
     },
-    datetime::secs_to_nanos,
+    datetime::secs_to_nanos_unchecked,
 };
 use nautilus_model::{
     accounts::{Account, AccountAny},
@@ -505,12 +506,13 @@ impl Cache {
             return None;
         };
 
+        // Use exit price for mark-to-market: longs exit at bid, shorts exit at ask
         let last = match position.side {
             PositionSide::Flat | PositionSide::NoPositionSide => {
                 return Some(Money::new(0.0, position.settlement_currency));
             }
-            PositionSide::Long => quote.ask_price,
-            PositionSide::Short => quote.bid_price,
+            PositionSide::Long => quote.bid_price,
+            PositionSide::Short => quote.ask_price,
         };
 
         Some(position.unrealized_pnl(last))
@@ -868,7 +870,7 @@ impl Cache {
         // Check for any open orders
         for order in self.orders_open(None, None, None, None) {
             residuals = true;
-            log::warn!("Residual {order:?}");
+            log::warn!("Residual {order}");
         }
 
         // Check for any open positions
@@ -895,7 +897,7 @@ impl Cache {
             }
         );
 
-        let buffer_ns = secs_to_nanos(buffer_secs as f64);
+        let buffer_ns = secs_to_nanos_unchecked(buffer_secs as f64);
 
         'outer: for client_order_id in self.index.orders_closed.clone() {
             if let Some(order) = self.orders.get(&client_order_id)
@@ -931,7 +933,7 @@ impl Cache {
             }
         );
 
-        let buffer_ns = secs_to_nanos(buffer_secs as f64);
+        let buffer_ns = secs_to_nanos_unchecked(buffer_secs as f64);
 
         for position_id in self.index.positions_closed.clone() {
             if let Some(position) = self.positions.get(&position_id)
@@ -1180,23 +1182,23 @@ impl Cache {
 
     /// Dispose of the cache which will close any underlying database adapter.
     ///
-    /// # Panics
-    ///
-    /// Panics if closing the database connection fails.
+    /// If closing the database connection fails, an error is logged.
     pub fn dispose(&mut self) {
-        if let Some(database) = &mut self.database {
-            database.close().expect("Failed to close database");
+        if let Some(database) = &mut self.database
+            && let Err(e) = database.close()
+        {
+            log::error!("Failed to close database during dispose: {e}");
         }
     }
 
     /// Flushes the caches database which permanently removes all persisted data.
     ///
-    /// # Panics
-    ///
-    /// Panics if flushing the database connection fails.
+    /// If flushing the database connection fails, an error is logged.
     pub fn flush_db(&mut self) {
-        if let Some(database) = &mut self.database {
-            database.flush().expect("Failed to flush database");
+        if let Some(database) = &mut self.database
+            && let Err(e) = database.flush()
+        {
+            log::error!("Failed to flush database: {e}");
         }
     }
 
@@ -1804,6 +1806,7 @@ impl Cache {
         self.positions.insert(position.id, position.clone());
         self.index.positions.insert(position.id);
         self.index.positions_open.insert(position.id);
+        self.index.positions_closed.remove(&position.id); // Cleanup for NETTING reopen
 
         log::debug!("Adding {position}");
 
@@ -2043,9 +2046,9 @@ impl Cache {
 
     /// Gets position snapshot IDs for the `instrument_id`.
     #[must_use]
-    pub fn position_snapshot_ids(&self, instrument_id: &InstrumentId) -> HashSet<PositionId> {
+    pub fn position_snapshot_ids(&self, instrument_id: &InstrumentId) -> AHashSet<PositionId> {
         // Get snapshot position IDs that match the instrument
-        let mut result = HashSet::new();
+        let mut result = AHashSet::new();
         for (position_id, _) in &self.position_snapshots {
             // Check if this position is for the requested instrument
             if let Some(position) = self.positions.get(position_id)
@@ -2715,12 +2718,13 @@ impl Cache {
         let mut total_quantity: Option<Quantity> = None;
 
         for spawn_order in exec_spawn_orders {
-            if !active_only || !spawn_order.is_closed() {
-                if let Some(mut total_quantity) = total_quantity {
-                    total_quantity += spawn_order.quantity();
-                }
-            } else {
-                total_quantity = Some(spawn_order.quantity());
+            if active_only && spawn_order.is_closed() {
+                continue;
+            }
+
+            match total_quantity.as_mut() {
+                Some(total) => *total += spawn_order.quantity(),
+                None => total_quantity = Some(spawn_order.quantity()),
             }
         }
 
@@ -2739,12 +2743,13 @@ impl Cache {
         let mut total_quantity: Option<Quantity> = None;
 
         for spawn_order in exec_spawn_orders {
-            if !active_only || !spawn_order.is_closed() {
-                if let Some(mut total_quantity) = total_quantity {
-                    total_quantity += spawn_order.filled_qty();
-                }
-            } else {
-                total_quantity = Some(spawn_order.filled_qty());
+            if active_only && spawn_order.is_closed() {
+                continue;
+            }
+
+            match total_quantity.as_mut() {
+                Some(total) => *total += spawn_order.filled_qty(),
+                None => total_quantity = Some(spawn_order.filled_qty()),
             }
         }
 
@@ -2763,12 +2768,13 @@ impl Cache {
         let mut total_quantity: Option<Quantity> = None;
 
         for spawn_order in exec_spawn_orders {
-            if !active_only || !spawn_order.is_closed() {
-                if let Some(mut total_quantity) = total_quantity {
-                    total_quantity += spawn_order.leaves_qty();
-                }
-            } else {
-                total_quantity = Some(spawn_order.leaves_qty());
+            if active_only && spawn_order.is_closed() {
+                continue;
+            }
+
+            match total_quantity.as_mut() {
+                Some(total) => *total += spawn_order.leaves_qty(),
+                None => total_quantity = Some(spawn_order.leaves_qty()),
             }
         }
 
@@ -3188,10 +3194,13 @@ impl Cache {
 
                 match (bid_bar, ask_bar) {
                     (Some(bid), Some(ask)) => {
-                        let bid_price = bid.front().unwrap().close;
-                        let ask_price = ask.front().unwrap().close;
-
-                        (bid_price, ask_price)
+                        match (bid.front(), ask.front()) {
+                            (Some(bid_bar), Some(ask_bar)) => (bid_bar.close, ask_bar.close),
+                            _ => {
+                                // Empty bar VecDeques
+                                continue;
+                            }
+                        }
                     }
                     _ => continue,
                 }
@@ -3421,7 +3430,7 @@ impl Cache {
 
         // Build union of open and inflight orders for audit,
         // this prevents false positives for SUBMITTED orders during venue latency.
-        let valid_order_ids: HashSet<ClientOrderId> = self
+        let valid_order_ids: AHashSet<ClientOrderId> = self
             .index
             .orders_open
             .union(&self.index.orders_inflight)

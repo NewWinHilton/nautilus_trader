@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -62,7 +62,7 @@ load_ids = [str(instrument_id)]
 instrument_provider_config = InstrumentProviderConfig(load_ids=frozenset(load_ids))
 
 # Order configuration
-order_qty = Decimal("10")  # Number of shares for limit orders, or notional value for market BUY
+order_qty = Decimal(10)  # Number of shares for limit orders, or notional value for market BUY
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -132,9 +132,6 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=instrument_provider_config,
             generate_order_history_from_trades=False,
-            max_retries=3,
-            retry_delay_initial_ms=1_000,
-            retry_delay_max_ms=10_000,
         ),
     },
     timeout_connection=20.0,
@@ -154,8 +151,8 @@ config_tester = ExecTesterConfig(
     subscribe_quotes=True,
     subscribe_trades=True,
     # subscribe_book=True,
-    # enable_buys=False,
-    enable_sells=False,
+    # enable_limit_buys=False,
+    enable_limit_sells=False,
     tob_offset_ticks=10,
     order_qty=order_qty,
     # open_position_on_start_qty=order_qty,

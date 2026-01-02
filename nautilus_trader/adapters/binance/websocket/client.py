@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -204,7 +204,7 @@ class BinanceWebSocketClient:
         ----------
         client_id : int
             ID of the client to connect
-        streams : List[str]
+        streams : list[str]
             List of streams for this client
 
         """
@@ -224,14 +224,15 @@ class BinanceWebSocketClient:
 
         config = WebSocketConfig(
             url=ws_url,
-            handler=self._handler,
-            heartbeat=60,
             headers=[],
-            ping_handler=lambda raw: self._handle_ping(client_id, raw),
+            heartbeat=60,
         )
 
         self._clients[client_id] = await WebSocketClient.connect(
+            loop_=self._loop,
             config=config,
+            handler=self._handler,
+            ping_handler=lambda raw: self._handle_ping(client_id, raw),
             post_reconnection=lambda: self._handle_reconnect(client_id),
         )
         self._is_connecting[client_id] = False
@@ -659,9 +660,8 @@ class BinanceWebSocketClient:
         self._streams.remove(stream)
 
         # Remove from client's streams list
-        if client_id in self._client_streams:
-            if stream in self._client_streams[client_id]:
-                self._client_streams[client_id].remove(stream)
+        if client_id in self._client_streams and stream in self._client_streams[client_id]:
+            self._client_streams[client_id].remove(stream)
 
         # Send unsubscribe message
         msg = self._create_unsubscribe_msg(streams=[stream])

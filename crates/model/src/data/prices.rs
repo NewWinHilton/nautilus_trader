@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -181,9 +181,6 @@ impl HasTsInit for IndexPriceUpdate {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{
@@ -191,7 +188,10 @@ mod tests {
         hash::{Hash, Hasher},
     };
 
-    use nautilus_core::serialization::Serializable;
+    use nautilus_core::serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    };
     use rstest::{fixture, rstest};
     use serde_json;
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -316,12 +316,14 @@ def runner_change_to_order_book_snapshot(
     Convert a RunnerChange to a OrderBookDeltas snapshot.
     """
     # Check for incorrect data types
-    assert not (
-        rc.bdatb or rc.bdatl
-    ), "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
-    assert not (
-        rc.batb or rc.batl
-    ), "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+    assert not rc.bdatb, (
+        "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    )
+    assert not rc.bdatl, (
+        "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    )
+    assert not rc.batb, "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+    assert not rc.batl, "Incorrect orderbook data found (best) should only be `atb` and `atl`"
 
     deltas: list[OrderBookDelta] = [
         OrderBookDelta.clear(
@@ -406,12 +408,14 @@ def runner_change_to_order_book_deltas(
     """
     Convert a RunnerChange to a list of OrderBookDeltas.
     """
-    assert not (
-        rc.bdatb or rc.bdatl
-    ), "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
-    assert not (
-        rc.batb or rc.batl
-    ), "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+    assert not rc.bdatb, (
+        "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    )
+    assert not rc.bdatl, (
+        "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    )
+    assert not rc.batb, "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+    assert not rc.batl, "Incorrect orderbook data found (best) should only be `atb` and `atl`"
 
     deltas: list[OrderBookDelta] = []
 

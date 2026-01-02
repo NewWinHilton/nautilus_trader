@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -49,7 +49,7 @@ async def test_connect_success(exec_client):
     await exec_client._connect()
 
     # Assert
-    exec_client._mock_http_client.http_get_margin.assert_called_once_with("XBt")
+    exec_client._mock_http_client.get_margin.assert_called_once_with("XBt")
     exec_client._mock_http_client.request_account_state.assert_called_once()
     exec_client._mock_ws_client.connect.assert_called_once()
     exec_client._mock_ws_client.wait_until_active.assert_called_once_with(timeout_secs=10.0)

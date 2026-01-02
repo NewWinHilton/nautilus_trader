@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -153,6 +153,8 @@ class SecureString:
             True if values are equal.
 
         """
+        if other is None:
+            return False
         if isinstance(other, SecureString):
             if self._is_cleared or other._is_cleared:
                 return False

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,9 @@ from abc import ABC
 from abc import abstractmethod
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Annotated, Any, NamedTuple
+from typing import Annotated
+from typing import Any
+from typing import NamedTuple
 
 import msgspec
 from ibapi.client import EClient

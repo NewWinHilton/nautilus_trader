@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
 from decimal import Decimal
 from typing import Any
 
@@ -63,6 +64,35 @@ def parse_order_side(order_side: PolymarketOrderSide) -> OrderSide:
             raise ValueError(f"invalid order side, was {order_side}")
 
 
+def determine_order_side(
+    trader_side: PolymarketLiquiditySide,
+    trade_side: PolymarketOrderSide,
+    taker_asset_id: str,
+    maker_asset_id: str,
+) -> OrderSide:
+    """
+    Determine the order side for a fill based on trader role and asset matching.
+
+    Polymarket uses a unified order book where complementary tokens (YES/NO) can match
+    across assets. This means a BUY YES can match with a BUY NO (cross-asset), not just
+    with a SELL YES (same-asset).
+
+    """
+    order_side = parse_order_side(trade_side)
+    if trader_side == PolymarketLiquiditySide.TAKER:
+        return order_side
+
+    # For MAKER: determine side based on whether assets match
+    is_cross_asset = maker_asset_id != taker_asset_id
+
+    if is_cross_asset:
+        # Cross-asset match: both sides are the same
+        return order_side
+    else:
+        # Same-asset match: sides are opposite
+        return OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
+
+
 def parse_liquidity_side(liquidity_side: PolymarketLiquiditySide) -> LiquiditySide:
     match liquidity_side:
         case PolymarketLiquiditySide.MAKER:
@@ -101,11 +131,11 @@ def parse_order_status(order_status: PolymarketOrderStatus) -> OrderStatus:
             return OrderStatus.FILLED
 
 
-def parse_instrument(
+def parse_polymarket_instrument(
     market_info: dict[str, Any],
     token_id: str,
     outcome: str,
-    ts_init: int,
+    ts_init: int | None = None,
 ) -> BinaryOption:
     instrument_id = get_polymarket_instrument_id(str(market_info["condition_id"]), token_id)
     raw_symbol = Symbol(get_polymarket_token_id(instrument_id))
@@ -125,6 +155,8 @@ def parse_instrument(
 
     maker_fee = Decimal(str(market_info["maker_base_fee"]))
     taker_fee = Decimal(str(market_info["taker_base_fee"]))
+
+    ts_init = ts_init if ts_init is not None else time.time_ns()
 
     return BinaryOption(
         instrument_id=instrument_id,

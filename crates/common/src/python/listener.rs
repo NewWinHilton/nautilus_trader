@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,13 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![cfg(feature = "live")]
+
 use bytes::Bytes;
 use futures::pin_mut;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
 use pyo3::prelude::*;
 use ustr::Ustr;
 
-use crate::msgbus::listener::MessageBusListener;
+use crate::live::listener::MessageBusListener;
 
 #[pymethods]
 impl MessageBusListener {

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -119,6 +119,11 @@ pub extern "C" fn level_exposure(level: &BookLevel_API) -> f64 {
     level.exposure()
 }
 
+/// Drops a `CVec` of `BookLevel_API` values.
+///
+/// # Panics
+///
+/// Panics if `CVec` invariants are violated (corrupted metadata).
 #[unsafe(no_mangle)]
 pub extern "C" fn vec_drop_book_levels(v: CVec) {
     if v.ptr.is_null() {
@@ -126,11 +131,22 @@ pub extern "C" fn vec_drop_book_levels(v: CVec) {
     }
 
     let CVec { ptr, len, cap } = v;
+
+    assert!(
+        len <= cap,
+        "vec_drop_book_levels: len ({len}) > cap ({cap})"
+    );
+
     let data: Vec<BookLevel_API> =
         unsafe { Vec::from_raw_parts(ptr.cast::<BookLevel_API>(), len, cap) };
     drop(data); // Memory freed here
 }
 
+/// Drops a `CVec` of `BookOrder` values.
+///
+/// # Panics
+///
+/// Panics if `CVec` invariants are violated (corrupted metadata).
 #[unsafe(no_mangle)]
 pub extern "C" fn vec_drop_book_orders(v: CVec) {
     if v.ptr.is_null() {
@@ -138,6 +154,12 @@ pub extern "C" fn vec_drop_book_orders(v: CVec) {
     }
 
     let CVec { ptr, len, cap } = v;
+
+    assert!(
+        len <= cap,
+        "vec_drop_book_orders: len ({len}) > cap ({cap})"
+    );
+
     let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
     drop(orders); // Memory freed here
 }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting Hyperliquid HTTP public example");
     tracing::info!("Testnet: {testnet}");
 
-    let client = HyperliquidHttpClient::new(testnet, Some(60));
+    let client = HyperliquidHttpClient::new(testnet, Some(60), None)?;
 
     // Fetch metadata
     let meta = client.info_meta().await?;

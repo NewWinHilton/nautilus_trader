@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,11 +32,7 @@ pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
         let z = x.wrapping_sub(delta);
         assert!(
             z < x,
-            "Liquidity subtraction underflow: x={}, y={}, delta={}, result={}",
-            x,
-            y,
-            delta,
-            z
+            "Liquidity subtraction underflow: x={x}, y={y}, delta={delta}, result={z}"
         );
         z
     } else {
@@ -44,11 +40,7 @@ pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
         let z = x.wrapping_add(delta);
         assert!(
             z >= x,
-            "Liquidity addition overflow: x={}, y={}, delta={}, result={}",
-            x,
-            y,
-            delta,
-            z
+            "Liquidity addition overflow: x={x}, y={y}, delta={delta}, result={z}"
         );
         z
     }
@@ -65,10 +57,6 @@ pub fn tick_spacing_to_max_liquidity_per_tick(tick_spacing: i32) -> u128 {
 
     u128::MAX / num_ticks as u128
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

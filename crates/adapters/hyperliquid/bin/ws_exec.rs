@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,10 @@
 
 use std::{env, time::Duration};
 
-use nautilus_hyperliquid::{common::consts::ws_url, websocket::client::HyperliquidWebSocketClient};
+use nautilus_hyperliquid::{
+    common::{HyperliquidProductType, consts::ws_url},
+    websocket::client::HyperliquidWebSocketClient,
+};
 use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
 
@@ -34,7 +37,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ws_url = ws_url(testnet);
     tracing::info!("WebSocket URL: {ws_url}");
 
-    let client = HyperliquidWebSocketClient::connect(ws_url).await?;
+    let mut client = HyperliquidWebSocketClient::new(
+        Some(ws_url.to_string()),
+        testnet,
+        HyperliquidProductType::Perp,
+        None,
+    );
+    client.connect().await?;
     tracing::info!("Connected to Hyperliquid WebSocket");
 
     // Subscribe to execution channels

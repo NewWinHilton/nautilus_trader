@@ -44,7 +44,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
@@ -60,7 +60,6 @@ derive_builder = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -87,13 +86,16 @@ tracing-test = { workspace = true }
 name = "coinbase-intx-http-private"
 path = "bin/http_private.rs"
 required-features = ["python"]
+doc = false
 
 [[bin]]
 name = "coinbase-intx-http-public"
 path = "bin/http_public.rs"
 required-features = ["python"]
+doc = false
 
 [[bin]]
 name = "coinbase-intx-ws"
 path = "bin/websocket.rs"
 required-features = ["python"]
+doc = false

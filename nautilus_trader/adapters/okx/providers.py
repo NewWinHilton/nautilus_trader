@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -154,8 +154,6 @@ class OKXInstrumentProvider(InstrumentProvider):
 
             self.add_currency(instrument.quote_currency)
             self.add_currency(instrument.get_settlement_currency())
-
-        self._log.info(f"Loaded {len(self._instruments)} instruments")
 
     async def load_ids_async(  # noqa: C901 (too complex)
         self,

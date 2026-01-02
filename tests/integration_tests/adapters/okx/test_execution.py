@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -52,7 +52,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.okx.conftest import _create_ws_mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client_builder(
     event_loop,
     mock_http_client,
@@ -124,7 +124,7 @@ async def test_connect_success(exec_client_builder, monkeypatch):
     try:
         # Assert
         instrument_provider.initialize.assert_awaited_once()
-        http_client.add_instrument.assert_called_once_with(
+        http_client.cache_instrument.assert_called_once_with(
             instrument_provider.instruments_pyo3.return_value[0],
         )
         http_client.request_account_state.assert_awaited_once()
@@ -1279,7 +1279,7 @@ async def test_spot_margin_market_buy_quote_quantity_handles_partial_fills(
     # Assert - Second fill should NOT generate OrderUpdated (already converted)
     assert not any(isinstance(event, OrderUpdated) for event in emitted_events)
 
-    # CRITICAL: Second fill should ALSO have net last_qty (adjusted for commission)
+    # Second fill should also have net last_qty (adjusted for commission)
     filled_events = [e for e in emitted_events if isinstance(e, OrderFilled)]
     assert len(filled_events) == 1
     # This should be NET (0.002615 - 0.00000261 = 0.00261239 ≈ 0.002612)
@@ -1377,3 +1377,181 @@ async def test_fill_with_changed_venue_order_id_generates_update(
     assert filled_events[0].venue_order_id == VenueOrderId("live-456")
     # And net last_qty (commission adjusted)
     assert filled_events[0].last_qty == Quantity.from_str("0.005225")
+
+
+@pytest.mark.asyncio
+async def test_clear_order_state_removes_canonical_entry(exec_client_builder, monkeypatch):
+    """
+    Test that _clear_order_state removes the canonical client order ID from aliases.
+    """
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(monkeypatch)
+    canonical = ClientOrderId("PARENT-001")
+
+    # Simulate alias registration (canonical→canonical)
+    client._client_id_aliases[canonical] = canonical
+
+    # Act
+    client._clear_order_state(canonical)
+
+    # Assert
+    assert canonical not in client._client_id_aliases
+
+
+@pytest.mark.asyncio
+async def test_clear_order_state_removes_child_alias_pointing_to_canonical(
+    exec_client_builder,
+    monkeypatch,
+):
+    """
+    Test that _clear_order_state removes child aliases that point to the canonical ID.
+    """
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(monkeypatch)
+    canonical = ClientOrderId("PARENT-001")
+    child = ClientOrderId("CHILD-001")
+
+    # Simulate alias registration
+    client._client_id_aliases[canonical] = canonical  # parent→parent
+    client._client_id_aliases[child] = canonical  # child→parent
+
+    # Act
+    client._clear_order_state(canonical)
+
+    # Assert - both entries should be removed
+    assert canonical not in client._client_id_aliases
+    assert child not in client._client_id_aliases
+    assert len(client._client_id_aliases) == 0
+
+
+@pytest.mark.asyncio
+async def test_clear_order_state_does_not_affect_unrelated_aliases(
+    exec_client_builder,
+    monkeypatch,
+):
+    """
+    Test that _clear_order_state only removes aliases for the target order.
+    """
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(monkeypatch)
+    canonical1 = ClientOrderId("PARENT-001")
+    child1 = ClientOrderId("CHILD-001")
+    canonical2 = ClientOrderId("PARENT-002")
+    child2 = ClientOrderId("CHILD-002")
+
+    # Register two separate order alias sets
+    client._client_id_aliases[canonical1] = canonical1
+    client._client_id_aliases[child1] = canonical1
+    client._client_id_aliases[canonical2] = canonical2
+    client._client_id_aliases[child2] = canonical2
+
+    # Act - only clear first order
+    client._clear_order_state(canonical1)
+
+    # Assert - first order fully removed, second order intact
+    assert canonical1 not in client._client_id_aliases
+    assert child1 not in client._client_id_aliases
+    assert canonical2 in client._client_id_aliases
+    assert child2 in client._client_id_aliases
+    assert len(client._client_id_aliases) == 2
+
+
+@pytest.mark.asyncio
+async def test_clear_order_state_clears_children_map(exec_client_builder, monkeypatch):
+    """
+    Test that _clear_order_state removes entries from _client_id_children.
+    """
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(monkeypatch)
+    canonical = ClientOrderId("PARENT-001")
+    child = ClientOrderId("CHILD-001")
+
+    # Simulate registration
+    client._client_id_aliases[canonical] = canonical
+    client._client_id_aliases[child] = canonical
+    client._client_id_children[canonical] = child
+
+    # Act
+    client._clear_order_state(canonical)
+
+    # Assert
+    assert canonical not in client._client_id_children
+
+
+@pytest.mark.asyncio
+async def test_clear_order_state_clears_algo_metadata(exec_client_builder, monkeypatch):
+    """
+    Test that _clear_order_state removes algo order metadata.
+    """
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(monkeypatch)
+    canonical = ClientOrderId("PARENT-001")
+    algo_id = "algo-123"
+    instrument_id = InstrumentId(Symbol("BTC-USDT-SWAP"), OKX_VENUE)
+
+    # Simulate algo order state
+    client._client_id_aliases[canonical] = canonical
+    client._algo_order_ids[canonical] = algo_id
+    client._algo_order_instruments[canonical] = instrument_id
+
+    # Act
+    client._clear_order_state(canonical)
+
+    # Assert
+    assert canonical not in client._algo_order_ids
+    assert canonical not in client._algo_order_instruments
+
+
+@pytest.mark.asyncio
+async def test_clear_order_state_handles_child_id_input(exec_client_builder, monkeypatch):
+    """
+    Test that _clear_order_state resolves child ID to canonical before cleanup.
+    """
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(monkeypatch)
+    canonical = ClientOrderId("PARENT-001")
+    child = ClientOrderId("CHILD-001")
+
+    # Simulate alias registration
+    client._client_id_aliases[canonical] = canonical
+    client._client_id_aliases[child] = canonical
+    client._client_id_children[canonical] = child
+
+    # Act - pass child ID, should resolve to canonical
+    client._clear_order_state(child)
+
+    # Assert - all entries for this order should be removed
+    assert canonical not in client._client_id_aliases
+    assert child not in client._client_id_aliases
+    assert canonical not in client._client_id_children
+
+
+@pytest.mark.asyncio
+async def test_child_id_reuse_after_cleanup_routes_correctly(exec_client_builder, monkeypatch):
+    """
+    Integration test: After terminal order cleanup, reusing the same child ID
+    should NOT route to the old canonical ID.
+    """
+    # Arrange
+    client, _, _, _, _ = exec_client_builder(monkeypatch)
+    old_canonical = ClientOrderId("OLD-PARENT-001")
+    child = ClientOrderId("CHILD-001")  # Same child ID to be reused
+    new_canonical = ClientOrderId("NEW-PARENT-002")
+
+    # First order: register old_canonical with child
+    client._client_id_aliases[old_canonical] = old_canonical
+    client._client_id_aliases[child] = old_canonical
+    client._client_id_children[old_canonical] = child
+
+    # Terminal event - cleanup old order
+    client._clear_order_state(old_canonical)
+
+    # New order: reuse same child ID with new canonical
+    client._client_id_aliases[new_canonical] = new_canonical
+    client._client_id_aliases[child] = new_canonical
+    client._client_id_children[new_canonical] = child
+
+    # Assert - child should now route to new canonical, not old
+    resolved = client._canonical_client_order_id(child)
+    assert resolved == new_canonical
+    assert resolved != old_canonical

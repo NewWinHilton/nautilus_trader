@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,10 +15,13 @@
 
 //! Enumerations that model Bybit string/int enums across HTTP and WebSocket payloads.
 
-use nautilus_model::enums::{AggressorSide, OrderSide};
+use std::fmt::Display;
+
+use chrono::{DateTime, Datelike, TimeZone, Utc};
+use nautilus_model::enums::{AggressorSide, OrderSide, TriggerType};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use strum::{AsRefStr, Display, EnumIter, EnumString};
+use strum::{AsRefStr, EnumIter, EnumString};
 
 /// Unified margin account status values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
@@ -37,8 +40,22 @@ pub enum BybitUnifiedMarginStatus {
 }
 
 /// Margin mode used by Bybit when switching risk profiles.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.bybit")
@@ -50,8 +67,22 @@ pub enum BybitMarginMode {
 }
 
 /// Position mode as returned by the v5 API.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize_repr,
+    Deserialize_repr,
+)]
 #[repr(i32)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.bybit")
@@ -80,7 +111,7 @@ pub enum BybitPositionIdx {
     Copy,
     Clone,
     Debug,
-    Display,
+    strum::Display,
     PartialEq,
     Eq,
     Hash,
@@ -104,7 +135,7 @@ pub enum BybitAccountType {
     Copy,
     Clone,
     Debug,
-    Display,
+    strum::Display,
     PartialEq,
     Eq,
     Hash,
@@ -133,7 +164,7 @@ pub enum BybitEnvironment {
     Copy,
     Clone,
     Debug,
-    Display,
+    strum::Display,
     Default,
     PartialEq,
     Eq,
@@ -322,8 +353,82 @@ pub enum BybitKlineInterval {
     Month1,
 }
 
+impl BybitKlineInterval {
+    /// Returns the end time in milliseconds for a bar that starts at `start_ms`.
+    ///
+    /// For most intervals this is simply `start_ms + duration`. For monthly bars,
+    /// this calculates the actual first millisecond of the next month to handle
+    /// variable month lengths (28-31 days).
+    #[must_use]
+    pub fn bar_end_time_ms(&self, start_ms: i64) -> i64 {
+        match self {
+            Self::Month1 => {
+                let start_dt = DateTime::from_timestamp_millis(start_ms)
+                    .unwrap_or_else(|| Utc.timestamp_millis_opt(0).unwrap());
+                let (year, month) = if start_dt.month() == 12 {
+                    (start_dt.year() + 1, 1)
+                } else {
+                    (start_dt.year(), start_dt.month() + 1)
+                };
+                Utc.with_ymd_and_hms(year, month, 1, 0, 0, 0)
+                    .single()
+                    .map_or(start_ms + 2_678_400_000, |dt| dt.timestamp_millis())
+            }
+            _ => start_ms + self.duration_ms(),
+        }
+    }
+
+    /// Returns the fixed duration of this interval in milliseconds.
+    ///
+    /// Note: For monthly bars, use [`Self::bar_end_time_ms`] instead as months have
+    /// variable lengths (28-31 days).
+    #[must_use]
+    pub const fn duration_ms(&self) -> i64 {
+        match self {
+            Self::Minute1 => 60_000,
+            Self::Minute3 => 180_000,
+            Self::Minute5 => 300_000,
+            Self::Minute15 => 900_000,
+            Self::Minute30 => 1_800_000,
+            Self::Hour1 => 3_600_000,
+            Self::Hour2 => 7_200_000,
+            Self::Hour4 => 14_400_000,
+            Self::Hour6 => 21_600_000,
+            Self::Hour12 => 43_200_000,
+            Self::Day1 => 86_400_000,
+            Self::Week1 => 604_800_000,
+            Self::Month1 => 2_678_400_000, // 31 days - use bar_end_time_ms() for accurate calculation
+        }
+    }
+}
+
+impl Display for BybitKlineInterval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Minute1 => "1",
+            Self::Minute3 => "3",
+            Self::Minute5 => "5",
+            Self::Minute15 => "15",
+            Self::Minute30 => "30",
+            Self::Hour1 => "60",
+            Self::Hour2 => "120",
+            Self::Hour4 => "240",
+            Self::Hour6 => "360",
+            Self::Hour12 => "720",
+            Self::Day1 => "D",
+            Self::Week1 => "W",
+            Self::Month1 => "M",
+        };
+        write!(f, "{s}")
+    }
+}
+
 /// Order status values returned by Bybit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
 pub enum BybitOrderStatus {
     #[serde(rename = "Created")]
     Created,
@@ -349,6 +454,10 @@ pub enum BybitOrderStatus {
 
 /// Order side enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
 pub enum BybitOrderSide {
     #[serde(rename = "")]
     Unknown,
@@ -378,9 +487,24 @@ impl From<BybitOrderSide> for OrderSide {
     }
 }
 
+impl From<BybitTriggerType> for TriggerType {
+    fn from(value: BybitTriggerType) -> Self {
+        match value {
+            BybitTriggerType::None => Self::Default,
+            BybitTriggerType::LastPrice => Self::LastPrice,
+            BybitTriggerType::IndexPrice => Self::IndexPrice,
+            BybitTriggerType::MarkPrice => Self::MarkPrice,
+        }
+    }
+}
+
 /// Order cancel reason values as returned by Bybit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
 pub enum BybitCancelType {
     CancelByUser,
     CancelByReduceOnly,
@@ -428,6 +552,10 @@ pub enum BybitCreateType {
 
 /// Venue order type enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
 pub enum BybitOrderType {
     #[serde(rename = "Market")]
     Market,
@@ -439,6 +567,10 @@ pub enum BybitOrderType {
 
 /// Stop order type classification.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
 pub enum BybitStopOrderType {
     #[serde(rename = "")]
     None,
@@ -468,6 +600,10 @@ pub enum BybitStopOrderType {
 
 /// Trigger type configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
 pub enum BybitTriggerType {
     #[serde(rename = "")]
     None,
@@ -482,6 +618,10 @@ pub enum BybitTriggerType {
 /// Trigger direction integers used by the API.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
 #[repr(i32)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
 pub enum BybitTriggerDirection {
     None = 0,
     RisesTo = 1,
@@ -491,6 +631,10 @@ pub enum BybitTriggerDirection {
 /// Take-profit/stop-loss mode for derivatives orders.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
 pub enum BybitTpSlMode {
     Full,
     Partial,
@@ -500,6 +644,10 @@ pub enum BybitTpSlMode {
 
 /// Time-in-force enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
 pub enum BybitTimeInForce {
     #[serde(rename = "GTC")]
     Gtc,
@@ -564,4 +712,128 @@ pub enum BybitEndpointType {
     Trade,
     Position,
     User,
+}
+
+/// Filter for open orders query.
+///
+/// Used with `GET /v5/order/realtime` to filter order status.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
+#[repr(i32)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
+pub enum BybitOpenOnly {
+    /// Query open status orders only (New, PartiallyFilled).
+    #[default]
+    OpenOnly = 0,
+    /// Query up to 500 recent closed orders (cancelled, rejected, filled).
+    ClosedRecent = 1,
+}
+
+/// Order filter for querying specific order types.
+///
+/// Used with `GET /v5/order/realtime` to filter by order category.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", eq, eq_int)
+)]
+pub enum BybitOrderFilter {
+    /// Active orders (default).
+    #[default]
+    Order,
+    /// Conditional orders (futures and spot).
+    StopOrder,
+    /// Spot take-profit/stop-loss orders.
+    #[serde(rename = "tpslOrder")]
+    TpslOrder,
+    /// Spot one-cancels-other orders.
+    OcoOrder,
+    /// Spot bidirectional TP/SL orders.
+    BidirectionalTpslOrder,
+}
+
+/// Margin actions for spot margin trading operations.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        hash,
+        frozen,
+        module = "nautilus_trader.core.nautilus_pyo3.bybit"
+    )
+)]
+pub enum BybitMarginAction {
+    /// Borrow funds for margin trading.
+    Borrow,
+    /// Repay borrowed funds.
+    Repay,
+    /// Query current borrowed amount.
+    GetBorrowAmount,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::minute1(BybitKlineInterval::Minute1, 60_000)]
+    #[case::minute3(BybitKlineInterval::Minute3, 180_000)]
+    #[case::minute5(BybitKlineInterval::Minute5, 300_000)]
+    #[case::minute15(BybitKlineInterval::Minute15, 900_000)]
+    #[case::minute30(BybitKlineInterval::Minute30, 1_800_000)]
+    #[case::hour1(BybitKlineInterval::Hour1, 3_600_000)]
+    #[case::hour2(BybitKlineInterval::Hour2, 7_200_000)]
+    #[case::hour4(BybitKlineInterval::Hour4, 14_400_000)]
+    #[case::hour6(BybitKlineInterval::Hour6, 21_600_000)]
+    #[case::hour12(BybitKlineInterval::Hour12, 43_200_000)]
+    #[case::day1(BybitKlineInterval::Day1, 86_400_000)]
+    #[case::week1(BybitKlineInterval::Week1, 604_800_000)]
+    #[case::month1(BybitKlineInterval::Month1, 2_678_400_000)]
+    fn test_kline_interval_duration_ms(
+        #[case] interval: BybitKlineInterval,
+        #[case] expected_ms: i64,
+    ) {
+        assert_eq!(interval.duration_ms(), expected_ms);
+    }
+
+    #[rstest]
+    fn test_bar_end_time_ms_non_monthly_adds_duration() {
+        let interval = BybitKlineInterval::Minute1;
+        let start_ms = 1704067200000i64;
+        assert_eq!(interval.bar_end_time_ms(start_ms), start_ms + 60_000);
+    }
+
+    #[rstest]
+    #[case::jan_31_days(1704067200000i64, 1706745600000i64)]
+    #[case::feb_leap_year_29_days(1706745600000i64, 1709251200000i64)]
+    #[case::apr_30_days(1711929600000i64, 1714521600000i64)]
+    #[case::dec_to_next_year(1733011200000i64, 1735689600000i64)]
+    fn test_bar_end_time_ms_monthly_variable_lengths(
+        #[case] start_ms: i64,
+        #[case] expected_end_ms: i64,
+    ) {
+        let interval = BybitKlineInterval::Month1;
+        assert_eq!(interval.bar_end_time_ms(start_ms), expected_end_ms);
+    }
 }

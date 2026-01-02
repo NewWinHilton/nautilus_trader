@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 use std::{
     cmp,
+    fmt::Display,
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, copy},
     path::Path,
@@ -34,7 +35,7 @@ enum DownloadError {
     NonRetryable(String),
 }
 
-impl std::fmt::Display for DownloadError {
+impl Display for DownloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Retryable(msg) => write!(f, "Retryable error: {msg}"),
@@ -217,6 +218,14 @@ fn download_file(
     timeout_secs: u64,
     retry_config: Option<RetryConfig>,
 ) -> anyhow::Result<()> {
+    // Validate HTTPS for security in production builds,
+    // HTTP is intentionally allowed in test builds for local test servers (127.0.0.1),
+    // CodeQL flags this as "non-https-url" but it's a deliberate design choice for testkit.
+    #[cfg(not(test))]
+    if !url.starts_with("https://") {
+        anyhow::bail!("URL must use HTTPS protocol for security: {url}");
+    }
+
     println!("Downloading file from {url} to {filepath:?}");
 
     if let Some(parent) = filepath.parent() {
@@ -353,9 +362,6 @@ fn update_sha256_checksums(
     Ok(())
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{
@@ -566,6 +572,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
+
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http_with_config(
                 &filepath_clone,
@@ -618,6 +625,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
+
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http_with_config(
                 &filepath_clone,
@@ -666,6 +674,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
+
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http_with_config(
                 &filepath_clone,
@@ -684,6 +693,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::panic_in_result_fn)]
     fn test_calculate_sha256() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let test_file_path = temp_dir.path().join("test_file.txt");
@@ -699,6 +709,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::panic_in_result_fn)]
     fn test_verify_sha256_checksum() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let test_file_path = temp_dir.path().join("test_file.txt");

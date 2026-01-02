@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,17 +31,28 @@ from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
 from ibapi.utils import current_fn_name
 
-# fmt: off
-from nautilus_trader.adapters.interactive_brokers.client.account import InteractiveBrokersClientAccountMixin
+from nautilus_trader.adapters.interactive_brokers.client.account import (
+    InteractiveBrokersClientAccountMixin,
+)
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Requests
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscriptions
-from nautilus_trader.adapters.interactive_brokers.client.connection import InteractiveBrokersClientConnectionMixin
-from nautilus_trader.adapters.interactive_brokers.client.contract import InteractiveBrokersClientContractMixin
-from nautilus_trader.adapters.interactive_brokers.client.error import InteractiveBrokersClientErrorMixin
-from nautilus_trader.adapters.interactive_brokers.client.market_data import InteractiveBrokersClientMarketDataMixin
-from nautilus_trader.adapters.interactive_brokers.client.order import InteractiveBrokersClientOrderMixin
+from nautilus_trader.adapters.interactive_brokers.client.connection import (
+    InteractiveBrokersClientConnectionMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.contract import (
+    InteractiveBrokersClientContractMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.error import (
+    InteractiveBrokersClientErrorMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.market_data import (
+    InteractiveBrokersClientMarketDataMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.order import (
+    InteractiveBrokersClientOrderMixin,
+)
 from nautilus_trader.adapters.interactive_brokers.client.wrapper import InteractiveBrokersEWrapper
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.cache.cache import Cache
@@ -50,9 +61,6 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.identifiers import ClientId
-
-
-# fmt: on
 
 
 class InteractiveBrokersClient(
@@ -138,15 +146,16 @@ class InteractiveBrokersClient(
         # ConnectionMixin
         self._connection_attempts: int = 0
         self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", 0))
-        self._indefinite_reconnect: bool = False if self._max_connection_attempts else True
+        self._indefinite_reconnect: bool = not self._max_connection_attempts
         self._reconnect_delay: int = 5  # seconds
         self._last_disconnection_ns: int | None = None
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
-        self._bar_timeout_tasks: dict[str, asyncio.Task] = (
-            {}
-        )  # Track timeout tasks for each bar type
+        self._bar_timeout_tasks: dict[
+            str,
+            asyncio.Task,
+        ] = {}  # Track timeout tasks for each bar type
         self._subscription_tick_data: dict[int, dict] = {}  # Store tick data by req_id
         self._subscription_start_times: dict[int, int] = {}  # Store start_ns for bar filtering
 

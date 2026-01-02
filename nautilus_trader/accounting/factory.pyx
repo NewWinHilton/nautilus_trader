@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -98,6 +98,23 @@ cdef class AccountFactory:
         Condition.not_in(issuer, _ISSUER_CASH_BORROWING, "issuer", "_ISSUER_CASH_BORROWING")
 
         _ISSUER_CASH_BORROWING[issuer] = True
+
+    @staticmethod
+    def deregister_cash_borrowing(str issuer):
+        """
+        Deregister cash borrowing for the given issuer.
+
+        This is primarily intended for test cleanup to prevent global state leakage.
+
+        Parameters
+        ----------
+        issuer : str
+            The issuer to deregister.
+
+        """
+        Condition.not_none(issuer, "issuer")
+
+        _ISSUER_CASH_BORROWING.pop(issuer, None)
 
     @staticmethod
     cdef Account create_c(AccountState event):

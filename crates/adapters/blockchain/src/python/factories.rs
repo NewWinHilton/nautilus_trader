@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@
 
 use pyo3::prelude::*;
 
-use crate::factories::BlockchainDataClientFactory;
+use crate::factories::{BlockchainDataClientFactory, BlockchainExecutionClientFactory};
 
 #[pymethods]
 impl BlockchainDataClientFactory {
@@ -40,5 +40,14 @@ impl BlockchainDataClientFactory {
     /// Returns a string representation of the factory.
     fn __repr__(&self) -> String {
         format!("BlockchainDataClientFactory(name={})", self.name())
+    }
+}
+
+#[pymethods]
+impl BlockchainExecutionClientFactory {
+    /// Creates a new `BlockchainExecutionClientFactory` instance.
+    #[new]
+    const fn py_new() -> Self {
+        Self::new()
     }
 }

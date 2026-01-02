@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,10 +15,7 @@
 
 import asyncio
 from collections.abc import Callable
-from typing import TypeVar
-
-
-T = TypeVar("T")
+from contextlib import suppress
 
 
 async def eventually(condition: Callable, timeout: float = 2.0) -> None:
@@ -73,8 +70,6 @@ def ensure_all_tasks_completed() -> None:
 
     gather_all = asyncio.gather(*all_tasks, return_exceptions=True)
 
-    try:
+    # Expected due to task cancellation
+    with suppress(asyncio.CancelledError):
         loop.run_until_complete(gather_all)
-    except asyncio.CancelledError:
-        # Expected due to task cancellation
-        pass

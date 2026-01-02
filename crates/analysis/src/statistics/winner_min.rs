@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
@@ -28,7 +28,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
 pub struct MinWinner {}
 
 impl Display for MinWinner {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Min Winner")
     }
 }
@@ -42,7 +42,7 @@ impl PortfolioStatistic for MinWinner {
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         if realized_pnls.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
         let winners: Vec<f64> = realized_pnls
@@ -52,7 +52,7 @@ impl PortfolioStatistic for MinWinner {
             .collect();
 
         if winners.is_empty() {
-            return Some(0.0); // Match old Python behavior
+            return Some(f64::NAN);
         }
 
         winners
@@ -70,10 +70,6 @@ impl PortfolioStatistic for MinWinner {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use nautilus_core::approx_eq;
@@ -86,7 +82,7 @@ mod tests {
         let min_winner = MinWinner {};
         let result = min_winner.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -95,8 +91,7 @@ mod tests {
         let realized_pnls = vec![-100.0, -50.0, -200.0];
         let result = min_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        // Returns 0.0 when no winners (matches old Python behavior)
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]

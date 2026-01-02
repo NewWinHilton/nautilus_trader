@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,6 @@
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
-    enums::CurrencyType,
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -26,15 +24,12 @@ use rust_decimal::Decimal;
 use super::{models::TardisInstrumentInfo, parse::parse_settlement_currency};
 use crate::parse::parse_option_kind;
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
+/// Returns a currency from the internal map or creates a new crypto currency.
+///
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed exchange assets.
 pub(crate) fn get_currency(code: &str) -> Currency {
-    // SAFETY: Mutex should not be poisoned in normal operation
-    CURRENCY_MAP
-        .lock()
-        .expect("Failed to acquire CURRENCY_MAP lock")
-        .get(code)
-        .copied()
-        .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+    Currency::get_or_create_crypto(code)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -65,7 +60,7 @@ pub fn create_currency_pair(
         multiplier,
         Some(size_increment),
         None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
+        Some(Quantity::from(info.min_trade_amount.to_string())),
         None,
         None,
         None,
@@ -111,7 +106,7 @@ pub fn create_crypto_perpetual(
         multiplier,
         Some(size_increment),
         None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
+        Some(Quantity::from(info.min_trade_amount.to_string())),
         None,
         None,
         None,
@@ -161,7 +156,7 @@ pub fn create_crypto_future(
         multiplier,
         Some(size_increment),
         None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
+        Some(Quantity::from(info.min_trade_amount.to_string())),
         None,
         None,
         None,
@@ -178,10 +173,9 @@ pub fn create_crypto_future(
 #[allow(clippy::too_many_arguments)]
 /// Create a crypto option instrument definition.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the `option_type` field of `InstrumentInfo` is `None`.
-#[must_use]
+/// Returns an error if the `option_type` or `strike_price` field of `InstrumentInfo` is `None`.
 pub fn create_crypto_option(
     info: &TardisInstrumentInfo,
     instrument_id: InstrumentId,
@@ -197,25 +191,32 @@ pub fn create_crypto_option(
     taker_fee: Decimal,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> InstrumentAny {
+) -> anyhow::Result<InstrumentAny> {
     let is_inverse = info.inverse.unwrap_or(false);
 
-    InstrumentAny::CryptoOption(CryptoOption::new(
+    let option_type = info.option_type.ok_or_else(|| {
+        anyhow::anyhow!(
+            "CryptoOption missing `option_type` field for instrument: {}",
+            info.id
+        )
+    })?;
+
+    let strike_price = info.strike_price.ok_or_else(|| {
+        anyhow::anyhow!(
+            "CryptoOption missing `strike_price` field for instrument: {}",
+            info.id
+        )
+    })?;
+
+    Ok(InstrumentAny::CryptoOption(CryptoOption::new(
         instrument_id,
         raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(parse_settlement_currency(info, is_inverse).as_str()),
         is_inverse,
-        parse_option_kind(
-            info.option_type
-                .expect("CryptoOption should have `option_type` field"),
-        ),
-        Price::new(
-            info.strike_price
-                .expect("CryptoOption should have `strike_price` field"),
-            price_increment.precision,
-        ),
+        parse_option_kind(option_type),
+        Price::new(strike_price, price_increment.precision),
         activation,
         expiration,
         price_increment.precision,
@@ -225,7 +226,7 @@ pub fn create_crypto_option(
         multiplier,
         Some(size_increment),
         None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
+        Some(Quantity::from(info.min_trade_amount.to_string())),
         None,
         None,
         None,
@@ -236,7 +237,7 @@ pub fn create_crypto_option(
         Some(taker_fee),
         ts_event,
         ts_init,
-    ))
+    )))
 }
 
 /// Checks if an instrument is available and valid based on time constraints.

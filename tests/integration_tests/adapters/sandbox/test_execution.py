@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,14 +34,13 @@ from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 def _make_quote_tick(instrument):
@@ -79,7 +78,7 @@ def _make_equity_with_increment(instrument: Equity, price_increment: str) -> Equ
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_connect(exec_client):
     exec_client.connect()
     await asyncio.sleep(0)
@@ -87,7 +86,7 @@ async def test_connect(exec_client):
     assert exec_client.is_connected
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_submit_order_success(exec_client, instrument, strategy, events):
     # Arrange
     exec_client.connect()
@@ -106,7 +105,7 @@ async def test_submit_order_success(exec_client, instrument, strategy, events):
     assert accepted.venue_order_id.value.startswith("SANDBOX-")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_submit_orders_list_success(
     exec_client,
     instrument,
@@ -116,8 +115,8 @@ async def test_submit_orders_list_success(
     # Arrange
     exec_client.connect()
     factory = OrderFactory(
-        trader_id=TraderId("TESTER-000"),
-        strategy_id=StrategyId("S-001"),
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
         clock=TestClock(),
     )
     first_order = TestExecStubs.limit_order(
@@ -161,7 +160,7 @@ async def test_submit_orders_list_success(
     assert second_accepted.venue_order_id.value.startswith("SANDBOX-")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_modify_order_success(exec_client, strategy, instrument, events):
     # Arrange
     exec_client.connect()
@@ -187,7 +186,7 @@ async def test_modify_order_success(exec_client, strategy, instrument, events):
     assert updated.price == Price.from_str("0.01")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument):
     # Arrange
     exec_client.connect()
@@ -214,7 +213,7 @@ async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument)
     assert client_order_id not in order_client_ids
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_cancel_order_success(exec_client, cache, strategy, instrument, events):
     # Arrange
     exec_client.connect()
@@ -235,7 +234,7 @@ async def test_cancel_order_success(exec_client, cache, strategy, instrument, ev
     assert isinstance(cancelled, OrderCanceled)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_cancel_order_fail(exec_client, cache, strategy, instrument, events):
     # Arrange
     exec_client.connect()
@@ -262,7 +261,7 @@ async def test_cancel_order_fail(exec_client, cache, strategy, instrument, event
     assert venue_order_id not in venue_order_ids
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_data_updates_exchange_instrument(exec_client, instrument):
     # Arrange
     exec_client.connect()
@@ -278,7 +277,7 @@ async def test_on_data_updates_exchange_instrument(exec_client, instrument):
     assert matching_engine.instrument.ts_init == updated_instrument.ts_init
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_data_forwards_instrument_status(exec_client, instrument):
     # Arrange
     exec_client.connect()
@@ -301,7 +300,7 @@ async def test_on_data_forwards_instrument_status(exec_client, instrument):
     mock_exchange.process.assert_called_once_with(status.ts_init)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_data_forwards_instrument_close(exec_client, instrument):
     # Arrange
     exec_client.connect()

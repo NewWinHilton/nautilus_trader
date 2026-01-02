@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,10 +19,9 @@ use nautilus_core::consts::NAUTILUS_USER_AGENT;
 use nautilus_model::defi::{Block, Chain, rpc::RpcNodeWssResponse};
 use nautilus_network::{
     RECONNECTED,
+    http::USER_AGENT,
     websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
 };
-use reqwest::header::USER_AGENT;
-use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::rpc::{
@@ -58,7 +57,7 @@ pub struct CoreBlockchainRpcClient {
     /// Channel receiver for consuming WebSocket messages.
     wss_consumer_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Message>>,
     /// Tracks confirmed subscriptions that need to be re-established on reconnection.
-    subscriptions: Arc<RwLock<HashMap<RpcEventType, String>>>,
+    subscriptions: Arc<tokio::sync::RwLock<HashMap<RpcEventType, String>>>,
 }
 
 impl Debug for CoreBlockchainRpcClient {
@@ -96,7 +95,7 @@ impl CoreBlockchainRpcClient {
             pending_subscription_request: HashMap::new(),
             subscription_event_types: HashMap::new(),
             wss_consumer_rx: None,
-            subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         }
     }
 
@@ -118,18 +117,18 @@ impl CoreBlockchainRpcClient {
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
             headers: vec![user_agent],
-            message_handler: Some(handler),
             heartbeat: Some(heartbeat_interval),
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(10_000),
             reconnect_delay_initial_ms: Some(1_000),
             reconnect_delay_max_ms: Some(30_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(1_000),
+            reconnect_max_attempts: None,
         };
 
-        let client = WebSocketClient::connect(config, None, vec![], None).await?;
+        let client =
+            WebSocketClient::connect(config, Some(handler), None, None, vec![], None).await?;
 
         self.wss_client = Some(Arc::new(client));
         self.wss_consumer_rx = Some(rx);

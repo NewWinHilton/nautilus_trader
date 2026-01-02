@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,7 +28,8 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 
-cdef set[InstrumentClass] EXPIRING_INSTRUMENT_TYPES
+cdef set[InstrumentClass] EXPIRING_INSTRUMENT_CLASSES
+cdef tuple[InstrumentClass, InstrumentClass, InstrumentClass] NEGATIVE_PRICE_INSTRUMENT_CLASSES
 
 
 cdef class Instrument(Data):
@@ -96,6 +97,8 @@ cdef class Instrument(Data):
     @staticmethod
     cdef dict base_to_dict_c(Instrument obj)
 
+    cpdef bint is_spread(self)
+    cpdef list legs(self)
     cpdef Currency get_base_currency(self)
     cpdef Currency get_settlement_currency(self)
     cpdef Currency get_cost_currency(self)

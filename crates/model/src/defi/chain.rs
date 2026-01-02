@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,14 +15,12 @@
 
 //! Basic structures for representing on-chain blocks and transactions in DeFi integrations.
 
-use std::{
-    fmt::{Display, Formatter},
-    str::FromStr,
-    sync::Arc,
-};
+use std::{fmt::Display, str::FromStr, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
+
+use crate::types::Currency;
 
 /// Represents different blockchain networks.
 #[derive(
@@ -162,6 +160,47 @@ impl Chain {
     /// Sets the RPC URL endpoint.
     pub fn set_rpc_url(&mut self, rpc: String) {
         self.rpc_url = Some(rpc);
+    }
+
+    /// Returns the native currency for this blockchain.
+    ///
+    /// Native currencies are the base tokens used to pay gas fees on each chain.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the native currency has not been defined for this blockchain.
+    pub fn native_currency(&self) -> Currency {
+        use crate::enums::CurrencyType;
+
+        let (code, name) = match self.name {
+            // Ethereum and Ethereum testnets
+            Blockchain::Ethereum | Blockchain::Sepolia | Blockchain::Holesky => ("ETH", "Ethereum"),
+
+            // Ethereum L2s that use ETH
+            Blockchain::Arbitrum
+            | Blockchain::ArbitrumNova
+            | Blockchain::ArbitrumSepolia
+            | Blockchain::Base
+            | Blockchain::BaseSepolia
+            | Blockchain::Optimism
+            | Blockchain::OptimismSepolia
+            | Blockchain::Blast
+            | Blockchain::BlastSepolia
+            | Blockchain::Scroll
+            | Blockchain::Linea => ("ETH", "Ethereum"),
+            Blockchain::Polygon | Blockchain::PolygonAmoy => ("POL", "Polygon"),
+            Blockchain::Avalanche | Blockchain::Fuji => ("AVAX", "Avalanche"),
+            Blockchain::Bsc | Blockchain::BscTestnet => ("BNB", "Binance Coin"),
+            _ => panic!("Native currency not specified for chain {}", self.name),
+        };
+
+        Currency::new(
+            code,
+            self.native_currency_decimals,
+            0,
+            name,
+            CurrencyType::Crypto,
+        )
     }
 
     /// Returns a reference to the `Chain` corresponding to the given `chain_id`, or `None` if it is not found.
@@ -343,7 +382,7 @@ impl Chain {
 }
 
 impl Display for Chain {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Chain(name={}, id={})", self.name, self.chain_id)
     }
 }
@@ -484,10 +523,6 @@ pub mod chains {
     pub static ZORA: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Zora, 7777777));
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -501,6 +536,12 @@ mod tests {
         assert_eq!(eth_chain.name, Blockchain::Ethereum);
         assert_eq!(eth_chain.chain_id, 1);
         assert_eq!(eth_chain.hypersync_url.as_str(), "https://1.hypersync.xyz");
+
+        // Test native currency
+        let currency = eth_chain.native_currency();
+        assert_eq!(currency.code.as_str(), "ETH");
+        assert_eq!(currency.precision, 18);
+        assert_eq!(currency.name.as_str(), "Ethereum");
     }
 
     #[rstest]
@@ -513,6 +554,12 @@ mod tests {
             arbitrum_chain.hypersync_url.as_str(),
             "https://42161.hypersync.xyz"
         );
+
+        // Test native currency (Arbitrum uses ETH)
+        let currency = arbitrum_chain.native_currency();
+        assert_eq!(currency.code.as_str(), "ETH");
+        assert_eq!(currency.precision, 18);
+        assert_eq!(currency.name.as_str(), "Ethereum");
     }
 
     #[rstest]

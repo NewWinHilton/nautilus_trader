@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@ use thiserror::Error;
 pub type BybitWsResult<T> = Result<T, BybitWsError>;
 
 /// Error type for Bybit WebSocket client failures.
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum BybitWsError {
     /// The WebSocket client is not currently connected.
     #[error("WebSocket not connected")]
@@ -65,4 +65,32 @@ impl From<serde_json::Error> for BybitWsError {
     fn from(error: serde_json::Error) -> Self {
         Self::Json(error.to_string())
     }
+}
+
+impl From<String> for BybitWsError {
+    fn from(msg: String) -> Self {
+        Self::Authentication(msg)
+    }
+}
+
+/// Determines if a Bybit WebSocket error should trigger a retry.
+pub(crate) fn should_retry_bybit_error(error: &BybitWsError) -> bool {
+    match error {
+        BybitWsError::Transport(_) => true,
+        BybitWsError::Send(_) => true,
+        BybitWsError::ClientError(msg) => {
+            let msg_lower = msg.to_lowercase();
+            msg_lower.contains("timeout")
+                || msg_lower.contains("timed out")
+                || msg_lower.contains("connection")
+                || msg_lower.contains("network")
+        }
+        BybitWsError::NotConnected => true,
+        BybitWsError::Authentication(_) | BybitWsError::Json(_) => false,
+    }
+}
+
+/// Creates a timeout error for Bybit operations.
+pub(crate) fn create_bybit_timeout_error(msg: String) -> BybitWsError {
+    BybitWsError::ClientError(msg)
 }

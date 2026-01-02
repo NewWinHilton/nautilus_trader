@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -50,6 +50,12 @@ pub enum BitmexWsError {
 impl From<serde_json::Error> for BitmexWsError {
     fn from(error: serde_json::Error) -> Self {
         Self::JsonError(error.to_string())
+    }
+}
+
+impl From<String> for BitmexWsError {
+    fn from(msg: String) -> Self {
+        Self::AuthenticationError(msg)
     }
 }
 

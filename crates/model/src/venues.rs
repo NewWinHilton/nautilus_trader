@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -87,9 +87,6 @@ pub static VENUE_MAP: LazyLock<Mutex<HashMap<&str, Venue>>> = LazyLock::new(|| {
     Mutex::new(map)
 });
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::MUTEX_POISONED;
@@ -246,6 +243,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::needless_collect)] // Collect needed for thread handles
     fn test_venue_constants_thread_safety() {
         use std::thread;
 
@@ -285,6 +283,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::needless_collect)] // Collect needed for thread handles
     fn test_venue_map_thread_safety() {
         use std::thread;
 

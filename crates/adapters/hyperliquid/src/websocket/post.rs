@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,7 @@ use std::{
 
 use derive_builder::Builder;
 use futures_util::future::BoxFuture;
+use nautilus_common::live::get_runtime;
 use tokio::{
     sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc, oneshot},
     time,
@@ -194,7 +195,7 @@ impl PostBatcher {
         let (tx_normal, rx_normal) = mpsc::channel::<ScheduledPost>(4096);
 
         // ALO lane: batchy tick, low jitter
-        tokio::spawn(Self::run_lane(
+        get_runtime().spawn(Self::run_lane(
             "ALO",
             rx_alo,
             Duration::from_millis(100),
@@ -202,7 +203,7 @@ impl PostBatcher {
         ));
 
         // NORMAL lane: faster tick; adjust as needed
-        tokio::spawn(Self::run_lane(
+        get_runtime().spawn(Self::run_lane(
             "NORMAL",
             rx_normal,
             Duration::from_millis(50),
@@ -309,7 +310,7 @@ impl Grouping {
     }
 }
 
-/// Parameters for creating a limit order
+/// Parameters for creating a limit order.
 #[derive(Debug, Clone, Builder)]
 pub struct LimitOrderParams {
     pub asset: u32,
@@ -321,7 +322,7 @@ pub struct LimitOrderParams {
     pub cloid: Option<String>,
 }
 
-/// Parameters for creating a trigger order
+/// Parameters for creating a trigger order.
 #[derive(Debug, Clone, Builder)]
 pub struct TriggerOrderParams {
     pub asset: u32,
@@ -346,6 +347,8 @@ impl OrderBuilder {
     pub fn new() -> Self {
         Self::default()
     }
+
+    #[must_use]
     pub fn grouping(mut self, g: Grouping) -> Self {
         self.grouping = g;
         self
@@ -353,6 +356,7 @@ impl OrderBuilder {
 
     /// Create a limit order with individual parameters (legacy method)
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn push_limit(
         self,
         asset: u32,
@@ -376,6 +380,7 @@ impl OrderBuilder {
     }
 
     /// Create a limit order using parameters struct
+    #[must_use]
     pub fn push_limit_order(mut self, params: LimitOrderParams) -> Self {
         self.orders.push(OrderRequest {
             a: params.asset,
@@ -391,6 +396,7 @@ impl OrderBuilder {
 
     /// Create a trigger order with individual parameters (legacy method)
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn push_trigger(
         self,
         asset: u32,
@@ -418,6 +424,7 @@ impl OrderBuilder {
     }
 
     /// Create a trigger order using parameters struct
+    #[must_use]
     pub fn push_trigger_order(mut self, params: TriggerOrderParams) -> Self {
         self.orders.push(OrderRequest {
             a: params.asset,
@@ -639,10 +646,6 @@ impl WsSender {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -750,7 +753,7 @@ mod tests {
         let (done_tx, done_rx) = oneshot::channel::<()>();
         let (check_tx, check_rx) = oneshot::channel::<()>(); // separate channel for checking
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             let _ = entered_tx.send(());
             let _rx = router2.register(9_999_999).await.unwrap();
             let _ = done_tx.send(());
@@ -760,7 +763,7 @@ mod tests {
         entered_rx.await.unwrap();
 
         // …and that it doesn't complete yet (still blocked on permit).
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if done_rx.await.is_ok() {
                 let _ = check_tx.send(());
             }
@@ -797,7 +800,7 @@ mod tests {
 
     // --- Builder Pattern Tests -----------------------------------------------------------------
 
-    #[test]
+    #[rstest]
     fn test_order_request_builder() {
         // Test OrderRequestBuilder derived from #[derive(Builder)]
         let order = OrderRequestBuilder::default()
@@ -821,7 +824,7 @@ mod tests {
         assert_eq!(order.c, Some("test-order-1".to_string()));
     }
 
-    #[test]
+    #[rstest]
     fn test_limit_order_params_builder() {
         // Test LimitOrderParamsBuilder
         let params = LimitOrderParamsBuilder::default()
@@ -843,7 +846,7 @@ mod tests {
         assert_eq!(params.cloid, Some("test-limit-1".to_string()));
     }
 
-    #[test]
+    #[rstest]
     fn test_trigger_order_params_builder() {
         // Test TriggerOrderParamsBuilder
         let params = TriggerOrderParamsBuilder::default()
@@ -866,7 +869,7 @@ mod tests {
         assert_eq!(params.trigger_px, "39500.0");
     }
 
-    #[test]
+    #[rstest]
     fn test_order_builder_single_limit_convenience() {
         // Test OrderBuilder::single_limit_order convenience method
         let params = LimitOrderParamsBuilder::default()
@@ -893,7 +896,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_order_builder_single_trigger_convenience() {
         // Test OrderBuilder::single_trigger_order convenience method
         let params = TriggerOrderParamsBuilder::default()
@@ -922,7 +925,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_order_builder_batch_orders() {
         // Test existing batch order functionality still works
         let params1 = LimitOrderParams {
@@ -962,7 +965,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_action_request_constructors() {
         // Test ActionRequest::order() constructor
         let order1 = mk_limit_gtc(0);

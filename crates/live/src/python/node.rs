@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,10 +19,9 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     actor::data_actor::{DataActorConfig, ImportableActorConfig},
-    component::{Component, register_component_actor_by_ref},
     enums::Environment,
+    live::get_runtime,
     python::actor::PyDataActor,
-    runtime::get_runtime,
 };
 use nautilus_core::{UUID4, python::to_pyruntime_err};
 use nautilus_model::identifiers::{ActorId, TraderId};
@@ -34,11 +33,10 @@ use pyo3::{
 };
 use serde_json;
 
-use crate::node::{LiveNode, LiveNodeBuilder};
+use crate::{builder::LiveNodeBuilder, node::LiveNode};
 
 #[pymethods]
 impl LiveNode {
-    /// Creates a new `LiveNode` builder.
     #[staticmethod]
     #[pyo3(name = "builder")]
     fn py_builder(
@@ -46,39 +44,35 @@ impl LiveNode {
         trader_id: TraderId,
         environment: Environment,
     ) -> PyResult<LiveNodeBuilderPy> {
-        match Self::builder(name, trader_id, environment) {
+        match Self::builder(trader_id, environment) {
             Ok(builder) => Ok(LiveNodeBuilderPy {
-                inner: Rc::new(RefCell::new(Some(builder))),
+                inner: Rc::new(RefCell::new(Some(builder.with_name(name)))),
             }),
             Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
         }
     }
 
-    /// Returns the node's environment.
     #[getter]
     #[pyo3(name = "environment")]
     fn py_environment(&self) -> Environment {
         self.environment()
     }
 
-    /// Returns the node's trader ID.
     #[getter]
     #[pyo3(name = "trader_id")]
     fn py_trader_id(&self) -> TraderId {
         self.trader_id()
     }
 
-    /// Returns the node's instance ID.
     #[getter]
     #[pyo3(name = "instance_id")]
     const fn py_instance_id(&self) -> UUID4 {
         self.instance_id()
     }
 
-    /// Returns whether the node is running.
     #[getter]
     #[pyo3(name = "is_running")]
-    const fn py_is_running(&self) -> bool {
+    fn py_is_running(&self) -> bool {
         self.is_running()
     }
 
@@ -310,7 +304,10 @@ impl LiveNode {
             log::debug!("Created Python actor instance: {python_actor:?}");
 
             // Get a mutable reference to the internal PyDataActor for registration
-            let mut py_data_actor_ref = python_actor.extract::<PyRefMut<PyDataActor>>()?;
+            let mut py_data_actor_ref = python_actor
+                .extract::<PyRefMut<PyDataActor>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
 
             log::debug!(
                 "Internal PyDataActor mem_addr: {}, registered: {}",
@@ -381,35 +378,25 @@ impl LiveNode {
         })
         .map_err(to_pyruntime_err)?;
 
-        // Add the actor to the trader's lifecycle management without consuming it
-        let actor_id = Python::attach(
-            |py| -> anyhow::Result<nautilus_model::identifiers::ActorId> {
-                let py_actor = python_actor.bind(py);
-                let py_data_actor_ref = py_actor
-                    .downcast::<PyDataActor>()
-                    .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
-                let py_data_actor = py_data_actor_ref.borrow();
+        let actor_id = Python::attach(|py| -> anyhow::Result<ActorId> {
+            let py_actor = python_actor.bind(py);
+            let py_data_actor_ref = py_actor
+                .cast::<PyDataActor>()
+                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
+            let py_data_actor = py_data_actor_ref.borrow();
+            py_data_actor.register_in_global_registries();
 
-                // Register the component in the global registry using the unsafe method
-                // SAFETY: The Python instance will remain alive, keeping the PyDataActor valid
-                unsafe {
-                    register_component_actor_by_ref(&*py_data_actor);
-                }
-
-                Ok(py_data_actor.actor_id())
-            },
-        )
+            Ok(py_data_actor.actor_id())
+        })
         .map_err(to_pyruntime_err)?;
 
-        // TODO: Add the actor ID to the trader for lifecycle management; clean up approach
         self.kernel_mut()
             .trader
             .add_actor_id_for_lifecycle(actor_id)
             .map_err(to_pyruntime_err)?;
 
-        // Store the Python actor reference to prevent garbage collection
-        // TODO: Add to a proper LiveNode registry for Python actors
-        std::mem::forget(python_actor); // Prevent dropping - we'll manage lifecycle manually
+        // Note: No mem::forget needed - the actor's py_self field holds a Py<PyAny>
+        // that keeps the Python instance alive, and registries share the inner via Rc::clone()
 
         log::info!("Registered Python actor {actor_id}");
         Ok(())

@@ -1,9 +1,5 @@
 # Reports
 
-:::info
-We are currently working on this concept guide.
-:::
-
 This guide explains the portfolio analysis and reporting capabilities provided by the `ReportProvider`
 class, and how these reports are used for PnL accounting and backtest post-run analysis.
 
@@ -55,8 +51,8 @@ orders_report = ReportProvider.generate_orders_report(orders)
 | `filled_qty`       | Amount filled (string).                       |
 | `price`            | Limit price (string if set).                  |
 | `avg_px`           | Average fill price (float if set).            |
-| `ts_init`          | Order initialization timestamp (nanoseconds). |
-| `ts_last`          | Last update timestamp (nanoseconds).          |
+| `ts_init`          | Order initialization timestamp (Unix nanoseconds). |
+| `ts_last`          | Last update timestamp (Unix nanoseconds).          |
 
 ### Order fills report
 
@@ -183,9 +179,10 @@ Accurate PnL accounting requires careful consideration of several factors:
 - **Commission impact**: Only included when in settlement currency.
 
 :::warning
-PnL calculations depend on the OMS type. In `NETTING` mode, position snapshots
+PnL calculations depend on the OMS type. In `NETTING` OMS, position snapshots
 preserve historical PnL when positions reopen. Always include snapshots in
-reports for accurate total PnL calculation.
+reports for accurate total PnL calculation. In `HEDGING` OMS, snapshots are
+not used since each position has a unique ID and is never reopened.
 :::
 
 ### Multi-currency accounting
@@ -213,7 +210,7 @@ for position in positions:
 
 ### Snapshot considerations
 
-For `NETTING` OMS configurations:
+For `NETTING` OMS:
 
 ```python
 from nautilus_trader.model.objects import Money
@@ -289,26 +286,41 @@ see the [Portfolio guide](portfolio.md#portfolio-statistics). The Portfolio guid
 
 ### Visualization
 
-Reports integrate well with visualization tools:
+NautilusTrader provides interactive tearsheets and plots via Plotly:
 
 ```python
-import matplotlib.pyplot as plt
+from nautilus_trader.analysis.tearsheet import create_tearsheet
 
-# Plot cumulative returns
-returns = positions_report["realized_return"].cumsum()
-returns.plot(title="Cumulative Returns")
-plt.show()
+# After backtest run
+engine.run()
 
-# Analyze fill quality (commission is a Money string e.g. "0.50 USD")
-# Extract numeric values and currency
-fills_report["commission_value"] = fills_report["commission"].str.split().str[0].astype(float)
-fills_report["commission_currency"] = fills_report["commission"].str.split().str[1]
+# Generate interactive HTML tearsheet
+create_tearsheet(engine, output_path="tearsheet.html")
+```
 
-# Group by liquidity side and currency
-commission_by_side = fills_report.groupby(["liquidity_side", "commission_currency"])["commission_value"].sum()
-commission_by_side.plot.bar()
-plt.title("Commission by Liquidity Side and Currency")
-plt.show()
+This creates an interactive HTML report with:
+
+- Equity curve
+- Drawdown analysis
+- Monthly returns heatmap
+- Performance statistics table
+- Returns distribution
+
+For more control, generate individual plots:
+
+```python
+from nautilus_trader.analysis.tearsheet import create_equity_curve
+
+returns = engine.portfolio.analyzer.returns()
+fig = create_equity_curve(returns, title="My Strategy Equity")
+fig.show()  # Display in browser
+fig.write_image("equity.png")  # Export to PNG (requires kaleido)
+```
+
+Install visualization dependencies:
+
+```bash
+uv pip install "nautilus_trader[visualization]"
 ```
 
 ## Report generation patterns
@@ -380,7 +392,7 @@ The `ReportProvider` works with several system components:
 - **Cache**: Source of all trading data (orders, positions, accounts) for reports.
 - **Portfolio**: Uses reports for performance analysis and metrics calculation.
 - **BacktestEngine**: Leverages reports for post-run analysis and visualization.
-- **Position snapshots**: Critical for accurate PnL reporting in `NETTING` OMS mode.
+- **Position snapshots**: Critical for accurate PnL reporting in `NETTING` OMS.
 
 ## Summary
 
@@ -389,4 +401,11 @@ trading performance. These reports transform raw trading data into structured Da
 enabling detailed analysis of orders, fills, positions, and account states. Understanding
 how to generate and interpret these reports is essential for strategy development,
 performance evaluation, and accurate PnL accounting, particularly when dealing with
-position snapshots in `NETTING` OMS configurations.
+position snapshots in `NETTING` OMS.
+
+## Related guides
+
+- [Visualization](visualization.md) - Learn how to create interactive tearsheets and charts from backtest results.
+- [Portfolio](portfolio.md) - Explore portfolio statistics and performance metrics.
+- [Backtesting](backtesting.md) - Learn how to run backtests that generate reports.
+- [Cache](cache.md) - Understand the cache system that stores data for reports.

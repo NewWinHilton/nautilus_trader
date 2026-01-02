@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,11 @@
 //! parts of the NautilusTrader system, including data requests, execution commands,
 //! and system control messages.
 
-use nautilus_model::{data::Data, events::OrderEventAny};
+use nautilus_model::{
+    data::Data,
+    events::{AccountState, OrderEventAny},
+    instruments::InstrumentAny,
+};
 use strum::Display;
 
 pub mod data;
@@ -39,6 +43,8 @@ pub use execution::ExecutionReport;
 pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
+    Instrument(InstrumentAny), // TODO: Eventually this can be `Data` once Cython is gone
+    // nautilus-import-ok: conditional compilation import
     #[cfg(feature = "defi")]
     DeFi(nautilus_model::defi::data::DefiData),
 }
@@ -49,4 +55,5 @@ pub enum DataEvent {
 pub enum ExecutionEvent {
     Order(OrderEventAny),
     Report(ExecutionReport),
+    Account(AccountState),
 }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Display,
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -52,7 +53,7 @@ impl TimeNonce {
     }
 }
 
-impl std::fmt::Display for TimeNonce {
+impl Display for TimeNonce {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -272,10 +273,6 @@ impl Default for NonceManager {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use std::thread;
@@ -344,6 +341,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::needless_collect)] // Collect needed for thread handles
     fn test_concurrent_nonce_generation() {
         let manager = Arc::new(NonceManager::new());
         let signer = SignerId::from("concurrent_signer");

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -991,9 +991,9 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            actor.handle_instrument(AUDUSD_SIM)
+        # Act
+        # Should not raise - exception is logged but not propagated
+        actor.handle_instrument(AUDUSD_SIM)
 
     def test_handle_instrument_when_not_running_does_not_send_to_on_instrument(self) -> None:
         # Arrange
@@ -1044,7 +1044,8 @@ class TestActor:
         actor.start()
 
         # Act
-        actor.handle_instruments([AUDUSD_SIM])
+        # handle_instruments doesn't exist - instruments are handled one at a time via handle_instrument
+        actor.handle_instrument(AUDUSD_SIM)
 
         # Assert
         assert actor.calls == ["on_start", "on_instrument"]
@@ -1061,7 +1062,8 @@ class TestActor:
         )
 
         # Act
-        actor.handle_instruments([AUDUSD_SIM])
+        # handle_instruments doesn't exist - instruments are handled one at a time via handle_instrument
+        actor.handle_instrument(AUDUSD_SIM)
 
         # Assert
         assert actor.calls == []
@@ -1223,7 +1225,8 @@ class TestActor:
         bars = [TestDataStubs.bar_5decimal(), TestDataStubs.bar_5decimal()]
 
         # Act
-        actor.handle_bars(bars)
+        for bar in bars:
+            actor.handle_historical_data(bar)
 
         # Assert
         assert result == bars
@@ -2118,6 +2121,96 @@ class TestActor:
         assert actor.calls == ["on_start", "on_order_filled"]
         assert actor.store[0] == fill
 
+    def test_subscribe_order_cancels(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        actor.subscribe_order_cancels(AUDUSD_SIM.id)
+
+        # Assert
+        # Order cancels are msgbus-only subscriptions (no data engine command)
+        subscriptions = self.msgbus.subscriptions(f"events.cancels.{AUDUSD_SIM.id}")
+        assert len(subscriptions) == 1
+
+    def test_unsubscribe_order_cancels(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_cancels(AUDUSD_SIM.id)
+
+        # Act
+        actor.unsubscribe_order_cancels(AUDUSD_SIM.id)
+
+        # Assert
+        subscriptions = self.msgbus.subscriptions(f"events.cancels.{AUDUSD_SIM.id}")
+        assert len(subscriptions) == 0
+
+    def test_handle_order_canceled_when_not_running_does_not_send_to_on_order_canceled(
+        self,
+    ) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_cancels(AUDUSD_SIM.id)
+
+        order = TestExecStubs.market_order()
+        canceled = TestEventStubs.order_canceled(order)
+
+        # Act
+        self.msgbus.publish(
+            topic=f"events.cancels.{AUDUSD_SIM.id}",
+            msg=canceled,
+        )
+
+        # Assert
+        assert actor.calls == []
+        assert actor.store == []
+
+    def test_handle_order_canceled_when_running_sends_to_on_order_canceled(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_cancels(AUDUSD_SIM.id)
+        actor.start()
+
+        order = TestExecStubs.market_order()
+        canceled = TestEventStubs.order_canceled(order)
+
+        # Act
+        self.msgbus.publish(
+            topic=f"events.cancels.{AUDUSD_SIM.id}",
+            msg=canceled,
+        )
+
+        # Assert
+        assert actor.calls == ["on_start", "on_order_canceled"]
+        assert actor.store[0] == canceled
+
     def assert_successful_request(self, actor, request_id, method_name):
         """
         Do assert the request is successful.
@@ -2127,18 +2220,18 @@ class TestActor:
         """
         method_info = f" for method '{method_name}'"
         assert request_id is not None, f"Request ID should not be None{method_info}"
-        assert (
-            self.data_engine.request_count == 1
-        ), f"Expected 1 request in data engine{method_info}, was {self.data_engine.request_count}"
-        assert (
-            not actor.has_pending_requests()
-        ), f"Actor should not have pending requests{method_info}"
+        assert self.data_engine.request_count == 1, (
+            f"Expected 1 request in data engine{method_info}, was {self.data_engine.request_count}"
+        )
+        assert not actor.has_pending_requests(), (
+            f"Actor should not have pending requests{method_info}"
+        )
         assert not actor.is_pending_request(
             request_id,
         ), f"Request {request_id} should not be pending{method_info}"
-        assert (
-            request_id not in actor.pending_requests()
-        ), f"Request {request_id} should not be in pending requests list{method_info}"
+        assert request_id not in actor.pending_requests(), (
+            f"Request {request_id} should not be in pending requests list{method_info}"
+        )
 
     def test_request_data_sends_request_to_data_engine(self) -> None:
         # Arrange
@@ -2360,6 +2453,67 @@ class TestActor:
         # Assert
         self.assert_successful_request(actor, request_id, "request_order_book_depth")
 
+    def test_request_order_book_snapshot_sends_request_to_data_engine(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        request_id = actor.request_order_book_snapshot(
+            AUDUSD_SIM.id,
+            limit=10,
+        )
+
+        # Assert
+        # Note: Unlike date-range requests (bars, quotes, trades), order book snapshot
+        # requests don't auto-respond with empty data when there's no client data.
+        # The request remains pending until a response is received.
+        assert request_id is not None
+        assert self.data_engine.request_count == 1
+
+    def test_request_order_book_snapshot_with_registered_callback(self) -> None:
+        # Arrange
+        handler: list[UUID4] = []
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        deltas = TestDataStubs.order_book_deltas(AUDUSD_SIM.id)
+
+        # Act
+        request_id = actor.request_order_book_snapshot(
+            AUDUSD_SIM.id,
+            limit=10,
+            callback=handler.append,
+        )
+
+        response = DataResponse(
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            data_type=DataType(OrderBookDeltas, metadata={"instrument_id": AUDUSD_SIM.id}),
+            data=[deltas],
+            correlation_id=request_id,
+            response_id=UUID4(),
+            start=None,
+            end=None,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.response(response)
+
+        # Assert
+        self.assert_successful_request(actor, request_id, "request_order_book_snapshot")
+        assert request_id in handler
+
     def test_request_bars_with_registered_callback(self) -> None:
         # Arrange
         handler: list[Bar] = []
@@ -2490,7 +2644,7 @@ class TestActor:
     # Derived from combining the above two lists
     REQUEST_METHODS_ALL = REQUEST_METHODS_INSTRUMENT + REQUEST_METHODS_WITHOUT_NONE_START_HANDLING
 
-    @pytest.mark.parametrize("method_name,args", REQUEST_METHODS_INSTRUMENT)
+    @pytest.mark.parametrize(("method_name", "args"), REQUEST_METHODS_INSTRUMENT)
     def test_none_start_and_end_replaced_with_current_time(self, method_name, args):
         """
         Test that None start and end values are replaced with current time.
@@ -2511,7 +2665,7 @@ class TestActor:
         # Assert
         self.assert_successful_request(actor, request_id, method_name)
 
-    @pytest.mark.parametrize("method_name,args", REQUEST_METHODS_INSTRUMENT)
+    @pytest.mark.parametrize(("method_name", "args"), REQUEST_METHODS_INSTRUMENT)
     def test_none_start_replaced_with_current_time(self, method_name, args):
         """
         Test that None start value is replaced with current time.
@@ -2533,7 +2687,7 @@ class TestActor:
         # Assert
         self.assert_successful_request(actor, request_id, method_name)
 
-    @pytest.mark.parametrize("method_name,args", REQUEST_METHODS_INSTRUMENT)
+    @pytest.mark.parametrize(("method_name", "args"), REQUEST_METHODS_INSTRUMENT)
     def test_none_end_replaced_with_current_time(self, method_name, args):
         """
         Test that None end value is replaced with current time.
@@ -2556,7 +2710,7 @@ class TestActor:
         self.assert_successful_request(actor, request_id, method_name)
 
     @pytest.mark.parametrize(
-        "request_method_name,method_args",
+        ("request_method_name", "method_args"),
         REQUEST_METHODS_WITHOUT_NONE_START_HANDLING,
     )
     def test_start_parameter_none_causes_failure(self, request_method_name, method_args):
@@ -2579,7 +2733,7 @@ class TestActor:
         with pytest.raises(TypeError, match=r"'start' argument was `None`"):
             request_method(**method_args, start=None, end=end_time)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_start_parameter_future_time_causes_failure(self, request_method_name, method_args):
         """
         Test that future start times cause failure for all request methods.
@@ -2600,7 +2754,7 @@ class TestActor:
         with pytest.raises(ValueError, match="start was > now"):
             request_method(**method_args, start=future_start, end=end_time)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_end_parameter_none_succeeds(self, request_method_name, method_args):
         """
         Test that end=None succeeds for all request methods (replaces with current
@@ -2622,7 +2776,7 @@ class TestActor:
         # Assert
         self.assert_successful_request(actor, request_id, request_method_name)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_end_parameter_future_time_causes_failure(self, request_method_name, method_args):
         """
         Test that future end times cause failure for all request methods.
@@ -2643,7 +2797,7 @@ class TestActor:
         with pytest.raises(ValueError, match="end was > now"):
             request_method(**method_args, start=start_time, end=future_end)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_start_after_end_causes_failure(self, request_method_name, method_args):
         """
         Test that start > end causes failure for all request methods.
@@ -2665,7 +2819,7 @@ class TestActor:
         with pytest.raises(ValueError, match="start was > end"):
             request_method(**method_args, start=start_time, end=end_time)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_start_equals_end_succeeds(self, request_method_name, method_args):
         """
         Test that start == end succeeds for all request methods.
@@ -2688,7 +2842,7 @@ class TestActor:
         self.assert_successful_request(actor, request_id, request_method_name)
 
     # Additional start/stop relationship validation test
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_start_before_stop_succeeds(self, request_method_name, method_args):
         """
         Test that start < stop succeeds for all request methods.

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,6 +20,7 @@ from typing import Any
 from nautilus_trader.adapters.okx.config import OKXExecClientConfig
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
+from nautilus_trader.adapters.okx.types import OkxInstrument
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -53,10 +54,16 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
@@ -147,6 +154,8 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
         self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_cash_position_reports=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
         if config.use_spot_cash_position_reports:
             self._log.warning(
@@ -224,7 +233,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
     async def _check_clock_sync(self) -> None:
         try:
-            server_time: int = await self._http_client.http_get_server_time()
+            server_time: int = await self._http_client.get_server_time()
             nautilus_time: int = self._clock.timestamp_ms()
             self._log.info(f"OKX server time {server_time} UNIX (ms)")
             self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
@@ -369,8 +378,9 @@ class OKXExecutionClient(LiveExecutionClient):
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses.
         instruments_pyo3 = self.okx_instrument_provider.instruments_pyo3()
+
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
+            self._http_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -447,14 +457,11 @@ class OKXExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception("Failed to generate OrderStatusReports", e)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-        if command.log_receipt_level == LogLevel.INFO:
-            self._log.info(receipt_log)
-        else:
-            self._log.debug(receipt_log)
+        self._log_report_receipt(
+            len(reports),
+            "OrderStatusReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -484,11 +491,11 @@ class OKXExecutionClient(LiveExecutionClient):
         canonical_requested_id: ClientOrderId | None = None
 
         try:
-            pyo3_reports: list[nautilus_pyo3.OrderStatusReport] = (
-                await self._http_client.request_order_status_reports(
-                    account_id=self.pyo3_account_id,
-                    instrument_id=pyo3_instrument_id,
-                )
+            pyo3_reports: list[
+                nautilus_pyo3.OrderStatusReport
+            ] = await self._http_client.request_order_status_reports(
+                account_id=self.pyo3_account_id,
+                instrument_id=pyo3_instrument_id,
             )
 
             if not pyo3_reports:
@@ -698,9 +705,7 @@ class OKXExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception("Failed to generate FillReports", e)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} FillReport{plural}")
+        self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
         return reports
 
@@ -711,7 +716,7 @@ class OKXExecutionClient(LiveExecutionClient):
         reports: list[PositionStatusReport] = []
 
         try:
-            okx_balance_details = await self._http_client.http_get_balance()
+            okx_balance_details = await self._http_client.get_balance()
 
             if not okx_balance_details:
                 self._log.warning("No OKX balance details returned from balance query")
@@ -929,9 +934,11 @@ class OKXExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception("Failed to generate PositionReports", e)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Generated {len(reports)} PositionReport{plural}")
+        self._log_report_receipt(
+            len(reports),
+            "PositionReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -1005,16 +1012,19 @@ class OKXExecutionClient(LiveExecutionClient):
         # Validate quote quantity for spot margin market orders
         if order.order_type == OrderType.MARKET and order.side == OrderSide.BUY:
             instrument = self._cache.instrument(order.instrument_id)
-            if instrument and isinstance(instrument, CurrencyPair):
-                if self._config.use_spot_margin:
-                    # Spot margin market buy orders must use quote quantity
-                    if not order.is_quote_quantity:
-                        self._deny_market_order_quantity(
-                            order,
-                            "OKX spot margin MARKET BUY orders require quote-denominated quantities; "
-                            "resubmit with `quote_quantity=True`",
-                        )
-                        return
+            # Spot margin market buy orders must use quote quantity
+            if (
+                instrument
+                and isinstance(instrument, CurrencyPair)
+                and self._config.use_spot_margin
+                and not order.is_quote_quantity
+            ):
+                self._deny_market_order_quantity(
+                    order,
+                    "OKX spot margin MARKET BUY orders require quote-denominated quantities; "
+                    "resubmit with `quote_quantity=True`",
+                )
+                return
 
         # Check if this is a conditional order that needs to go via REST API
         is_conditional = order.order_type in (
@@ -1348,6 +1358,12 @@ class OKXExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"OKX does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         if self._config.use_mm_mass_cancel:
             await self._cancel_all_orders_mass_cancel(command)
         else:
@@ -1464,7 +1480,7 @@ class OKXExecutionClient(LiveExecutionClient):
     def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
         return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)
 
-    def _handle_msg(self, msg: Any) -> None:
+    def _handle_msg(self, msg: Any) -> None:  # noqa: C901 (too complex)
         if isinstance(msg, nautilus_pyo3.OKXWebSocketError):
             self._log.error(repr(msg))
             return
@@ -1472,12 +1488,22 @@ class OKXExecutionClient(LiveExecutionClient):
         try:
             if isinstance(msg, nautilus_pyo3.AccountState):
                 self._handle_account_state(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderAccepted):
+                self._handle_order_accepted_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderCanceled):
+                self._handle_order_canceled_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderExpired):
+                self._handle_order_expired_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderRejected):
                 self._handle_order_rejected_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderCancelRejected):
                 self._handle_order_cancel_rejected_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderModifyRejected):
                 self._handle_order_modify_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderTriggered):
+                self._handle_order_triggered_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderUpdated):
+                self._handle_order_updated_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
                 self._handle_order_status_report_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.FillReport):
@@ -1486,6 +1512,15 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._log.debug(f"Received unhandled message type: {type(msg)}")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
+
+    def _handle_instrument_update(self, pyo3_instrument: OkxInstrument) -> None:
+        self._http_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        if self._ws_client is not None:
+            self._ws_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        if self._ws_business_client is not None:
+            self._ws_business_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
 
     def _handle_account_state(self, pyo3_account_state: nautilus_pyo3.AccountState) -> None:
         account_state = AccountState.from_dict(pyo3_account_state.to_dict())
@@ -1496,8 +1531,31 @@ class OKXExecutionClient(LiveExecutionClient):
             ts_event=account_state.ts_event,
         )
 
+    def _handle_order_accepted_pyo3(self, pyo3_event: nautilus_pyo3.OrderAccepted) -> None:
+        event = OrderAccepted.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_canceled_pyo3(self, pyo3_event: nautilus_pyo3.OrderCanceled) -> None:
+        event = OrderCanceled.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._clear_order_state(event.client_order_id)
+
+    def _handle_order_expired_pyo3(self, pyo3_event: nautilus_pyo3.OrderExpired) -> None:
+        event = OrderExpired.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._clear_order_state(event.client_order_id)
+
     def _handle_order_rejected_pyo3(self, pyo3_event: nautilus_pyo3.OrderRejected) -> None:
         event = OrderRejected.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._clear_order_state(event.client_order_id)
+
+    def _handle_order_triggered_pyo3(self, pyo3_event: nautilus_pyo3.OrderTriggered) -> None:
+        event = OrderTriggered.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_updated_pyo3(self, pyo3_event: nautilus_pyo3.OrderUpdated) -> None:
+        event = OrderUpdated.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
 
     def _handle_order_cancel_rejected_pyo3(
@@ -1628,7 +1686,7 @@ class OKXExecutionClient(LiveExecutionClient):
             if venue_is_original_algo:
                 return
 
-            if is_order_updated(order, report):
+            if report.is_order_updated(order):
                 self.generate_order_updated(
                     strategy_id=order.strategy_id,
                     instrument_id=report.instrument_id,
@@ -1952,16 +2010,14 @@ class OKXExecutionClient(LiveExecutionClient):
             self._algo_order_ids.pop(identifier, None)
             self._algo_order_instruments.pop(identifier, None)
 
+    def _clear_order_state(self, client_order_id: ClientOrderId) -> None:
+        canonical = self._canonical_client_order_id(client_order_id) or client_order_id
+        self._algo_order_ids.pop(canonical, None)
+        self._algo_order_instruments.pop(canonical, None)
 
-def is_order_updated(order: Order, report: OrderStatusReport) -> bool:
-    if order.has_price and report.price and order.price != report.price:
-        return True
+        self._client_id_aliases.pop(canonical, None)
+        for key, value in list(self._client_id_aliases.items()):
+            if value == canonical:
+                self._client_id_aliases.pop(key, None)
 
-    if (
-        order.has_trigger_price
-        and report.trigger_price
-        and order.trigger_price != report.trigger_price
-    ):
-        return True
-
-    return order.quantity != report.quantity
+        self._client_id_children.pop(canonical, None)

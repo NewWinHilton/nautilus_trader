@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -100,7 +100,7 @@ impl OrderStatusReport {
         limit_offset: Option<Decimal>,
         trailing_offset: Option<Decimal>,
         trailing_offset_type: Option<TrailingOffsetType>,
-        avg_px: Option<f64>,
+        avg_px: Option<Decimal>,
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
@@ -161,7 +161,7 @@ impl OrderStatusReport {
             report = report.with_trailing_offset_type(trailing_offset_type);
         }
         if let Some(avg_px) = avg_px {
-            report = report.with_avg_px(avg_px);
+            report.avg_px = Some(avg_px);
         }
         if let Some(display_qty) = display_qty {
             report = report.with_display_qty(display_qty);
@@ -356,7 +356,7 @@ impl OrderStatusReport {
 
     #[getter]
     #[pyo3(name = "avg_px")]
-    const fn py_avg_px(&self) -> Option<f64> {
+    fn py_avg_px(&self) -> Option<Decimal> {
         self.avg_px
     }
 

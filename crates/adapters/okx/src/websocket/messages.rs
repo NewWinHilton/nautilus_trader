@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,9 +18,12 @@
 use derive_builder::Builder;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, OrderBookDeltas},
-    events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
+    events::{
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired,
+        OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
+    },
     instruments::InstrumentAny,
-    reports::{FillReport, OrderStatusReport},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -48,13 +51,20 @@ pub enum NautilusWsMessage {
     FundingRates(Vec<FundingRateUpdate>),
     Instrument(Box<InstrumentAny>),
     AccountUpdate(AccountState),
+    PositionUpdate(PositionStatusReport),
+    OrderAccepted(OrderAccepted),
+    OrderCanceled(OrderCanceled),
+    OrderExpired(OrderExpired),
     OrderRejected(OrderRejected),
     OrderCancelRejected(OrderCancelRejected),
     OrderModifyRejected(OrderModifyRejected),
+    OrderTriggered(OrderTriggered),
+    OrderUpdated(OrderUpdated),
     ExecutionReports(Vec<ExecutionReport>),
     Error(OKXWebSocketError),
     Raw(serde_json::Value), // Unhandled channels
     Reconnected,
+    Authenticated,
 }
 
 /// Represents an OKX WebSocket error.
@@ -127,32 +137,29 @@ pub struct OKXSubscriptionArg {
     pub inst_id: Option<Ustr>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum OKXWebSocketEvent {
+/// OKX WebSocket message variants.
+///
+/// Uses custom deserialization that checks discriminant fields (event, op, action)
+/// to determine the correct variant.
+#[derive(Debug)]
+pub enum OKXWsMessage {
     Login {
         event: String,
         code: String,
         msg: String,
-        #[serde(rename = "connId")]
         conn_id: String,
     },
     Subscription {
         event: OKXSubscriptionEvent,
         arg: OKXWebSocketArg,
-        #[serde(rename = "connId")]
         conn_id: String,
-        #[serde(default)]
         code: Option<String>,
-        #[serde(default)]
         msg: Option<String>,
     },
     ChannelConnCount {
         event: String,
         channel: OKXWsChannel,
-        #[serde(rename = "connCount")]
         conn_count: String,
-        #[serde(rename = "connId")]
         conn_id: String,
     },
     OrderResponse {
@@ -175,10 +182,258 @@ pub enum OKXWebSocketEvent {
         code: String,
         msg: String,
     },
-    #[serde(skip)]
     Ping,
-    #[serde(skip)]
     Reconnected,
+}
+
+impl<'de> Deserialize<'de> for OKXWsMessage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        // Deserialize to a map to inspect discriminant fields first
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let obj = value
+            .as_object()
+            .ok_or_else(|| D::Error::custom("expected JSON object for OKXWsMessage"))?;
+
+        // Check discriminant fields in priority order
+
+        // 1. Check for "event" field - Login, Subscription, ChannelConnCount, or Error
+        if let Some(event) = obj.get("event").and_then(|v| v.as_str()) {
+            if event == "login" {
+                return parse_login(obj);
+            } else if event == "subscribe" || event == "unsubscribe" {
+                return parse_subscription(obj);
+            } else if event == "error" {
+                // All error events (simple or subscription-related) go to parse_error
+                // Extra fields like "arg" and "connId" are ignored
+                return parse_error(obj);
+            } else if obj.contains_key("channel") && obj.contains_key("connCount") {
+                return parse_channel_conn_count(obj);
+            }
+        }
+
+        // 2. Check for "op" field - OrderResponse
+        if obj.contains_key("op") {
+            return parse_order_response(obj);
+        }
+
+        // 3. Check for "action" field with "arg" - BookData
+        if obj.contains_key("action") && obj.contains_key("arg") {
+            return parse_book_data(obj);
+        }
+
+        // 4. Check for "arg" and "data" without "action" - Data
+        if obj.contains_key("arg") && obj.contains_key("data") {
+            return parse_data(obj);
+        }
+
+        // 5. Fallback to Error if it has "code" and "msg"
+        if obj.contains_key("code") && obj.contains_key("msg") {
+            return parse_error(obj);
+        }
+
+        Err(D::Error::custom(format!(
+            "cannot determine OKXWsMessage variant from: {}",
+            serde_json::to_string(&value).unwrap_or_default()
+        )))
+    }
+}
+
+fn parse_login<E: serde::de::Error>(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> Result<OKXWsMessage, E> {
+    Ok(OKXWsMessage::Login {
+        event: obj
+            .get("event")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("event"))?,
+        code: obj
+            .get("code")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("code"))?,
+        msg: obj
+            .get("msg")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("msg"))?,
+        conn_id: obj
+            .get("connId")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("connId"))?,
+    })
+}
+
+fn parse_subscription<E: serde::de::Error>(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> Result<OKXWsMessage, E> {
+    let event_str = obj
+        .get("event")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| E::missing_field("event"))?;
+
+    let event: OKXSubscriptionEvent =
+        serde_json::from_value(serde_json::Value::String(event_str.to_string()))
+            .map_err(|e| E::custom(format!("invalid event: {e}")))?;
+
+    let arg: OKXWebSocketArg = obj
+        .get("arg")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| E::custom(format!("invalid arg: {e}")))?
+        .ok_or_else(|| E::missing_field("arg"))?;
+
+    Ok(OKXWsMessage::Subscription {
+        event,
+        arg,
+        conn_id: obj
+            .get("connId")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("connId"))?,
+        code: obj.get("code").and_then(|v| v.as_str()).map(String::from),
+        msg: obj.get("msg").and_then(|v| v.as_str()).map(String::from),
+    })
+}
+
+fn parse_channel_conn_count<E: serde::de::Error>(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> Result<OKXWsMessage, E> {
+    let channel: OKXWsChannel = obj
+        .get("channel")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| E::custom(format!("invalid channel: {e}")))?
+        .ok_or_else(|| E::missing_field("channel"))?;
+
+    Ok(OKXWsMessage::ChannelConnCount {
+        event: obj
+            .get("event")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("event"))?,
+        channel,
+        conn_count: obj
+            .get("connCount")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("connCount"))?,
+        conn_id: obj
+            .get("connId")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("connId"))?,
+    })
+}
+
+fn parse_order_response<E: serde::de::Error>(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> Result<OKXWsMessage, E> {
+    let op: OKXWsOperation = obj
+        .get("op")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| E::custom(format!("invalid op: {e}")))?
+        .ok_or_else(|| E::missing_field("op"))?;
+
+    let data: Vec<serde_json::Value> = obj
+        .get("data")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| E::custom(format!("invalid data: {e}")))?
+        .unwrap_or_default();
+
+    Ok(OKXWsMessage::OrderResponse {
+        id: obj.get("id").and_then(|v| v.as_str()).map(String::from),
+        op,
+        code: obj
+            .get("code")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("code"))?,
+        msg: obj
+            .get("msg")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("msg"))?,
+        data,
+    })
+}
+
+fn parse_book_data<E: serde::de::Error>(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> Result<OKXWsMessage, E> {
+    let arg: OKXWebSocketArg = obj
+        .get("arg")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| E::custom(format!("invalid arg: {e}")))?
+        .ok_or_else(|| E::missing_field("arg"))?;
+
+    let action: OKXBookAction = obj
+        .get("action")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| E::custom(format!("invalid action: {e}")))?
+        .ok_or_else(|| E::missing_field("action"))?;
+
+    let data: Vec<OKXBookMsg> = obj
+        .get("data")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| E::custom(format!("invalid data: {e}")))?
+        .ok_or_else(|| E::missing_field("data"))?;
+
+    Ok(OKXWsMessage::BookData { arg, action, data })
+}
+
+fn parse_data<E: serde::de::Error>(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> Result<OKXWsMessage, E> {
+    let arg: OKXWebSocketArg = obj
+        .get("arg")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| E::custom(format!("invalid arg: {e}")))?
+        .ok_or_else(|| E::missing_field("arg"))?;
+
+    let data = obj
+        .get("data")
+        .cloned()
+        .ok_or_else(|| E::missing_field("data"))?;
+
+    Ok(OKXWsMessage::Data { arg, data })
+}
+
+fn parse_error<E: serde::de::Error>(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> Result<OKXWsMessage, E> {
+    Ok(OKXWsMessage::Error {
+        code: obj
+            .get("code")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("code"))?,
+        msg: obj
+            .get("msg")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| E::missing_field("msg"))?,
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -648,6 +903,10 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
+    /// Whether to close the entire position.
+    #[builder(default)]
+    #[serde(rename = "closePosition", skip_serializing_if = "Option::is_none")]
+    pub close_position: Option<bool>,
     /// Target currency for net orders.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -770,10 +1029,6 @@ pub struct WsCancelAlgoOrderParams {
     pub algo_cl_ord_id: Option<String>,
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
@@ -827,10 +1082,10 @@ mod tests {
     fn test_deserialize_subscribe_confirmation() {
         let json_str = r#"{"event":"subscribe","arg":{"channel":"instruments","instType":"SPOT"},"connId":"380cfa6a"}"#;
 
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
             Ok(msg) => {
-                if let OKXWebSocketEvent::Subscription {
+                if let OKXWsMessage::Subscription {
                     event,
                     arg,
                     conn_id,
@@ -854,10 +1109,10 @@ mod tests {
     fn test_deserialize_subscribe_with_inst_id() {
         let json_str = r#"{"event":"subscribe","arg":{"channel":"candle1m","instId":"ETH-USDT"},"connId":"358602f5"}"#;
 
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
             Ok(msg) => {
-                if let OKXWebSocketEvent::Subscription {
+                if let OKXWsMessage::Subscription {
                     event,
                     arg,
                     conn_id,
@@ -898,9 +1153,9 @@ mod tests {
     #[rstest]
     fn test_order_response_with_enum_operation() {
         let json_str = r#"{"id":"req-123","op":"order","code":"0","msg":"","data":[]}"#;
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
-            Ok(OKXWebSocketEvent::OrderResponse {
+            Ok(OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -918,9 +1173,9 @@ mod tests {
         }
 
         let json_str = r#"{"id":"cancel-456","op":"cancel-order","code":"50001","msg":"Order not found","data":[]}"#;
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
-            Ok(OKXWebSocketEvent::OrderResponse {
+            Ok(OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -938,9 +1193,9 @@ mod tests {
         }
 
         let json_str = r#"{"id":"amend-789","op":"amend-order","code":"50002","msg":"Invalid price","data":[]}"#;
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
-            Ok(OKXWebSocketEvent::OrderResponse {
+            Ok(OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -987,10 +1242,10 @@ mod tests {
             "data": [{"sMsg": "Order placed successfully"}]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(success_response).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(success_response).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::OrderResponse {
+            OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -1014,10 +1269,10 @@ mod tests {
             "data": [{"sMsg": "Order with client order ID not found"}]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(failure_response).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(failure_response).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::OrderResponse {
+            OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -1045,10 +1300,10 @@ mod tests {
             "connId": "a4d3ae55"
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(subscription_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(subscription_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::Subscription {
+            OKXWsMessage::Subscription {
                 event,
                 arg,
                 conn_id,
@@ -1075,10 +1330,10 @@ mod tests {
             "connId": "a4d3ae55"
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(login_success).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(login_success).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::Login {
+            OKXWsMessage::Login {
                 event,
                 code,
                 msg,
@@ -1089,7 +1344,7 @@ mod tests {
                 assert_eq!(msg, "Login successful");
                 assert_eq!(conn_id, "a4d3ae55");
             }
-            _ => panic!("Expected Login variant, was: {:?}", parsed),
+            _ => panic!("Expected Login variant, was: {parsed:?}"),
         }
     }
 
@@ -1100,14 +1355,56 @@ mod tests {
             "msg": "Invalid request"
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(error_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(error_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::Error { code, msg } => {
+            OKXWsMessage::Error { code, msg } => {
                 assert_eq!(code, "60012");
                 assert_eq!(msg, "Invalid request");
             }
             _ => panic!("Expected Error variant"),
+        }
+    }
+
+    #[rstest]
+    fn test_error_event_with_event_field_parsing() {
+        // OKX sends error events with "event":"error" field (e.g., login failures)
+        let error_json = r#"{
+            "event": "error",
+            "code": "60018",
+            "msg": "Invalid sign"
+        }"#;
+
+        let parsed: OKXWsMessage = serde_json::from_str(error_json).unwrap();
+
+        match parsed {
+            OKXWsMessage::Error { code, msg } => {
+                assert_eq!(code, "60018");
+                assert_eq!(msg, "Invalid sign");
+            }
+            _ => panic!("Expected Error variant, was: {parsed:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_subscription_error_with_arg_field_parsing() {
+        // OKX sends subscription errors with arg field (channel subscription failures)
+        let error_json = r#"{
+            "event": "error",
+            "arg": {"channel": "tickers", "instId": "INVALID-INST"},
+            "code": "60012",
+            "msg": "Invalid request: channel not found",
+            "connId": "a4d3ae55"
+        }"#;
+
+        let parsed: OKXWsMessage = serde_json::from_str(error_json).unwrap();
+
+        match parsed {
+            OKXWsMessage::Error { code, msg } => {
+                assert_eq!(code, "60012");
+                assert_eq!(msg, "Invalid request: channel not found");
+            }
+            _ => panic!("Expected Error variant, was: {parsed:?}"),
         }
     }
 
@@ -1141,7 +1438,7 @@ mod tests {
             op: OKXWsOperation::Subscribe,
             args: vec![OKXSubscriptionArg {
                 channel: OKXWsChannel::Tickers,
-                inst_type: Some(crate::common::enums::OKXInstrumentType::Spot),
+                inst_type: Some(OKXInstrumentType::Spot),
                 inst_family: None,
                 inst_id: Some(Ustr::from("BTC-USDT")),
             }],
@@ -1183,10 +1480,10 @@ mod tests {
         ];
 
         for (response_json, expected_msg) in responses {
-            let parsed: OKXWebSocketEvent = serde_json::from_str(response_json).unwrap();
+            let parsed: OKXWsMessage = serde_json::from_str(response_json).unwrap();
 
             match parsed {
-                OKXWebSocketEvent::OrderResponse {
+                OKXWsMessage::OrderResponse {
                     id: _,
                     op: _,
                     code,
@@ -1227,10 +1524,10 @@ mod tests {
             }]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(book_data_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(book_data_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::BookData { arg, action, data } => {
+            OKXWsMessage::BookData { arg, action, data } => {
                 assert_eq!(arg.channel, OKXWsChannel::Books);
                 assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT")));
                 assert_eq!(
@@ -1260,10 +1557,10 @@ mod tests {
             }]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(data_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(data_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::Data { arg, data } => {
+            OKXWsMessage::Data { arg, data } => {
                 assert_eq!(arg.channel, OKXWsChannel::Trades);
                 assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT")));
                 assert!(data.is_array());
@@ -1321,10 +1618,10 @@ mod tests {
             "data": [{"sMsg": "Order placed successfully"}]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(order_response_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(order_response_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::OrderResponse {
+            OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -1351,10 +1648,10 @@ mod tests {
             "data": [{"sMsg": "Order with client order ID not found"}]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(order_response_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(order_response_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::OrderResponse {
+            OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -101,6 +101,8 @@ cdef class Order:
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity leaves_qty
     """The order total leaves quantity.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity overfill_qty
+    """The order total overfill quantity (filled beyond original quantity).\n\n:returns: `Quantity`"""
     cdef readonly double avg_px
     """The order average fill price.\n\n:returns: `double`"""
     cdef readonly double slippage
@@ -193,6 +195,8 @@ cdef class Order:
 
     cpdef void apply(self, OrderEvent event)
 
+    cdef Quantity calculate_overfill_c(self, Quantity fill_qty)
+    cdef bint is_duplicate_fill_c(self, OrderFilled fill)
     cdef void _denied(self, OrderDenied event)
     cdef void _submitted(self, OrderSubmitted event)
     cdef void _rejected(self, OrderRejected event)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -252,7 +252,7 @@ class BybitOptionsDataCollector(Strategy):
 
         # Log summary of options data files
         options_count = len(
-            [k for k in self.quote_ticks_files.keys() if k != str(self.config.spot_instrument_id)],
+            [k for k in self.quote_ticks_files if k != str(self.config.spot_instrument_id)],
         )
         self.log.info(f"Will create data files for {options_count} options instruments")
 

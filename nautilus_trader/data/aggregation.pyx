@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,7 @@ import pandas as pd
 cimport numpy as np
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from libc.math cimport fabs
 from libc.stdint cimport uint64_t
 
 from datetime import timedelta
@@ -29,13 +30,18 @@ from datetime import timedelta
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 
 from nautilus_trader.common.component cimport Clock
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport Logger
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TimeEvent
+from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
+from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
@@ -43,9 +49,16 @@ from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.functions cimport bar_aggregation_to_str
+from nautilus_trader.model.greeks cimport GreeksCalculator
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport generic_spread_id_to_list
+from nautilus_trader.model.identifiers cimport is_generic_spread_id
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 
 
 cdef class BarBuilder:
@@ -229,12 +242,17 @@ cdef class BarBuilder:
 
         self._last_close = self._close
         self.reset()
+
         return bar
 
 
 cdef class BarAggregator:
     """
     Provides a means of aggregating specified bars and sending to a registered handler.
+
+    The aggregator maintains two state flags exposed as properties:
+    - `historical_mode`: Indicates the aggregator is processing historical data.
+    - `is_running`: Indicates the aggregator is receiving data from the message bus.
 
     Parameters
     ----------
@@ -259,29 +277,51 @@ cdef class BarAggregator:
     ) -> None:
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
-        self.bar_type = bar_type
         self._handler = handler
         self._handler_backup = None
         self._log = Logger(name=type(self).__name__)
         self._builder = BarBuilder(
             instrument=instrument,
-            bar_type=self.bar_type,
+            bar_type=bar_type,
         )
-        self._batch_mode = False
-        self.is_running = False # is_running means that an aggregator receives data from the message bus
 
-    def start_batch_update(self, handler: Callable[[Bar], None], uint64_t time_ns) -> None:
-        self._batch_mode = True
-        self._handler_backup = self._handler
+        self.bar_type = bar_type
+        self.historical_mode = False
+        self.is_running = False
+
+    cpdef void set_historical_mode(self, bint historical_mode, handler: Callable[[Bar], None]):
+        """
+        Set the historical mode state of the aggregator.
+
+        Parameters
+        ----------
+        historical_mode : bool
+            Whether the aggregator is processing historical data.
+        handler : Callable[[Bar], None]
+            The bar handler to use in this mode.
+
+        Raises
+        ------
+        TypeError
+            If `handler` is ``None`` or not callable.
+
+        """
+        Condition.callable(handler, "handler")
+
+        self.historical_mode = historical_mode
         self._handler = handler
-        self._start_batch_time(time_ns)
 
-    def _start_batch_time(self, uint64_t time_ns):
-        pass
+    cpdef void set_running(self, bint is_running):
+        """
+        Set the running state of the aggregator.
 
-    def stop_batch_update(self) -> None:
-        self._batch_mode = False
-        self._handler = self._handler_backup
+        Parameters
+        ----------
+        is_running : bool
+            Whether the aggregator is running (receiving data from message bus).
+
+        """
+        self.is_running = is_running
 
     cpdef void handle_quote_tick(self, QuoteTick tick):
         """
@@ -382,7 +422,7 @@ cdef class TickBarAggregator(BarAggregator):
     ) -> None:
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type.standard(),
+            bar_type=bar_type,
             handler=handler,
         )
 
@@ -397,6 +437,136 @@ cdef class TickBarAggregator(BarAggregator):
 
         if self._builder.count == self.bar_type.spec.step:
             self._build_now_and_send()
+
+
+cdef class TickImbalanceBarAggregator(BarAggregator):
+    """
+    Provides a means of building tick imbalance bars from ticks.
+
+    When the absolute difference between buy and sell ticks reaches the step
+    threshold of the bar specification, then a bar is created and sent to the
+    handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        self._imbalance = 0
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        self._apply_update(tick.price, tick.size, tick.ts_init)
+
+        if side == AggressorSide.BUYER:
+            self._imbalance += 1
+        else:
+            self._imbalance -= 1
+
+        if abs(self._imbalance) >= self.bar_type.spec.step:
+            self._build_now_and_send()
+            self._imbalance = 0
+
+
+cdef class TickRunsBarAggregator(BarAggregator):
+    """
+    Provides a means of building tick runs bars from ticks.
+
+    When consecutive ticks of the same aggressor side reach the step threshold
+    of the bar specification, then a bar is created and sent to the handler.
+    The run resets when the aggressor side changes.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+
+        self._current_run_side = AggressorSide.NO_AGGRESSOR
+        self._has_run_side = False
+        self._run_count = 0
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        if not self._has_run_side or self._current_run_side != side:
+            self._current_run_side = side
+            self._has_run_side = True
+            self._run_count = 0
+            self._builder.reset()
+
+        self._apply_update(tick.price, tick.size, tick.ts_init)
+        self._run_count += 1
+
+        if self._run_count >= self.bar_type.spec.step:
+            self._build_now_and_send()
+            self._run_count = 0
+            self._has_run_side = False
 
 
 cdef class VolumeBarAggregator(BarAggregator):
@@ -429,7 +599,7 @@ cdef class VolumeBarAggregator(BarAggregator):
     ) -> None:
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type.standard(),
+            bar_type=bar_type,
             handler=handler,
         )
 
@@ -494,6 +664,201 @@ cdef class VolumeBarAggregator(BarAggregator):
             assert raw_volume_update >= 0
 
 
+cdef class VolumeImbalanceBarAggregator(BarAggregator):
+    """
+    Provides a means of building volume imbalance bars from ticks.
+
+    When the absolute difference between buy and sell volume reaches the step
+    threshold of the bar specification, then a bar is created and sent to the
+    handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        cdef long long step_value = self.bar_type.spec.step
+        self._imbalance_raw = 0
+        self._raw_step = <long long>(step_value * FIXED_SCALAR)
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        cdef long long side_sign = 1 if side == AggressorSide.BUYER else -1
+        cdef double size_remaining = float(tick.size)
+        cdef double size_chunk
+        cdef double needed_qty
+        cdef long long imbalance_abs
+        cdef long long needed
+
+        while size_remaining > 0.0:
+            imbalance_abs = abs(self._imbalance_raw)
+            needed = self._raw_step - imbalance_abs
+            if needed <= 0:
+                needed = 1
+
+            # Convert needed from raw (10^9 scale) to quantity
+            needed_qty = <double>needed / <double>FIXED_SCALAR
+            if size_remaining <= needed_qty:
+                self._imbalance_raw += side_sign * <long long>(size_remaining * FIXED_SCALAR)
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_remaining, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+
+                if abs(self._imbalance_raw) >= self._raw_step:
+                    self._build_now_and_send()
+                    self._imbalance_raw = 0
+                break
+
+            size_chunk = needed_qty
+            self._apply_update(
+                tick.price,
+                Quantity(size_chunk, precision=tick.size.precision),
+                tick.ts_init,
+            )
+            self._imbalance_raw += side_sign * needed
+            size_remaining -= size_chunk
+
+            if abs(self._imbalance_raw) >= self._raw_step:
+                self._build_now_and_send()
+                self._imbalance_raw = 0
+
+
+cdef class VolumeRunsBarAggregator(BarAggregator):
+    """
+    Provides a means of building volume runs bars from ticks.
+
+    When consecutive volume of the same aggressor side reaches the step
+    threshold of the bar specification, then a bar is created and sent to the
+    handler. The run resets when the aggressor side changes.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        cdef long long step_value = self.bar_type.spec.step
+        self._current_run_side = AggressorSide.NO_AGGRESSOR
+        self._has_run_side = False
+        self._run_volume_raw = 0
+        self._raw_step = <long long>(step_value * FIXED_SCALAR)
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        if not self._has_run_side or self._current_run_side != side:
+            self._current_run_side = side
+            self._has_run_side = True
+            self._run_volume_raw = 0
+            self._builder.reset()
+
+        cdef double size_remaining = float(tick.size)
+        cdef double size_chunk
+        cdef double needed_qty
+        cdef long long needed
+
+        while size_remaining > 0.0:
+            needed = self._raw_step - self._run_volume_raw
+            if needed <= 0:
+                needed = 1
+
+            # Convert needed from raw (10^9 scale) to quantity
+            needed_qty = <double>needed / <double>FIXED_SCALAR
+            if size_remaining <= needed_qty:
+                self._run_volume_raw += <long long>(size_remaining * FIXED_SCALAR)
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_remaining, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+
+                if self._run_volume_raw >= self._raw_step:
+                    self._build_now_and_send()
+                    self._run_volume_raw = 0
+                    self._has_run_side = False
+                break
+
+            size_chunk = needed_qty
+            self._apply_update(
+                tick.price,
+                Quantity(size_chunk, precision=tick.size.precision),
+                tick.ts_init,
+            )
+            self._run_volume_raw += needed
+            size_remaining -= size_chunk
+
+            if self._run_volume_raw >= self._raw_step:
+                self._build_now_and_send()
+                self._run_volume_raw = 0
+                self._has_run_side = False
+
+
 cdef class ValueBarAggregator(BarAggregator):
     """
     Provides a means of building value bars from ticks.
@@ -524,7 +889,7 @@ cdef class ValueBarAggregator(BarAggregator):
     ) -> None:
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type.standard(),
+            bar_type=bar_type,
             handler=handler,
         )
 
@@ -608,6 +973,220 @@ cdef class ValueBarAggregator(BarAggregator):
             assert volume_update >= 0
 
 
+cdef class ValueImbalanceBarAggregator(BarAggregator):
+    """
+    Provides a means of building value imbalance bars from ticks.
+
+    When the absolute difference between buy and sell notional value reaches
+    the step threshold of the bar specification, then a bar is created and
+    sent to the handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        self._imbalance_value = 0.0
+        self._step_value = float(self.bar_type.spec.step)
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef double price_f64 = float(tick.price)
+        if price_f64 == 0.0:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        cdef double side_sign = 1.0 if side == AggressorSide.BUYER else -1.0
+        cdef double size_remaining = float(tick.size)
+        cdef double value_remaining
+        cdef double current_sign
+        cdef double needed
+        cdef double value_chunk
+        cdef double size_chunk
+        cdef double imbalance_abs
+        cdef double value_to_flatten
+
+        while size_remaining > 0.0:
+            value_remaining = price_f64 * size_remaining
+            current_sign = 0.0
+            if self._imbalance_value > 0.0:
+                current_sign = 1.0
+            elif self._imbalance_value < 0.0:
+                current_sign = -1.0
+
+            if current_sign == 0.0 or current_sign == side_sign:
+                needed = self._step_value - abs(self._imbalance_value)
+                if value_remaining <= needed:
+                    self._imbalance_value += side_sign * value_remaining
+                    self._apply_update(
+                        tick.price,
+                        Quantity(size_remaining, precision=tick.size.precision),
+                        tick.ts_init,
+                    )
+
+                    if abs(self._imbalance_value) >= self._step_value:
+                        self._build_now_and_send()
+                        self._imbalance_value = 0.0
+                    break
+
+                value_chunk = needed
+                size_chunk = value_chunk / price_f64
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_chunk, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+                self._imbalance_value += side_sign * value_chunk
+                size_remaining -= size_chunk
+
+                if abs(self._imbalance_value) >= self._step_value:
+                    self._build_now_and_send()
+                    self._imbalance_value = 0.0
+            else:
+                imbalance_abs = abs(self._imbalance_value)
+                value_to_flatten = value_remaining if value_remaining < imbalance_abs else imbalance_abs
+                size_chunk = value_to_flatten / price_f64
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_chunk, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+                self._imbalance_value += side_sign * value_to_flatten
+                size_remaining -= size_chunk
+
+
+cdef class ValueRunsBarAggregator(BarAggregator):
+    """
+    Provides a means of building value runs bars from ticks.
+
+    When consecutive notional value of the same aggressor side reaches the
+    step threshold of the bar specification, then a bar is created and sent
+    to the handler. The run resets when the aggressor side changes.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        self._current_run_side = AggressorSide.NO_AGGRESSOR
+        self._has_run_side = False
+        self._run_value = 0.0
+        self._step_value = float(self.bar_type.spec.step)
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef double price_f64 = float(tick.price)
+        if price_f64 == 0.0:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        if not self._has_run_side or self._current_run_side != side:
+            self._current_run_side = side
+            self._has_run_side = True
+            self._run_value = 0.0
+            self._builder.reset()
+
+        cdef double size_remaining = float(tick.size)
+        cdef double value_update
+        cdef double value_needed
+        cdef double size_chunk
+
+        while size_remaining > 0.0:
+            value_update = price_f64 * size_remaining
+            if self._run_value + value_update < self._step_value:
+                self._run_value += value_update
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_remaining, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+
+                if self._run_value >= self._step_value:
+                    self._build_now_and_send()
+                    self._run_value = 0.0
+                    self._has_run_side = False
+                break
+
+            value_needed = self._step_value - self._run_value
+            size_chunk = value_needed / price_f64
+            self._apply_update(
+                tick.price,
+                Quantity(size_chunk, precision=tick.size.precision),
+                tick.ts_init,
+            )
+
+            self._build_now_and_send()
+            self._run_value = 0.0
+            self._has_run_side = False
+            size_remaining -= size_chunk
+
+
 cdef class RenkoBarAggregator(BarAggregator):
     """
     Provides a means of building Renko bars from ticks.
@@ -639,7 +1218,7 @@ cdef class RenkoBarAggregator(BarAggregator):
     ) -> None:
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type.standard(),
+            bar_type=bar_type,
             handler=handler,
         )
 
@@ -791,8 +1370,6 @@ cdef class TimeBarAggregator(BarAggregator):
         The origin time offset.
     bar_build_delay : int, default 0
         The time delay (microseconds) before building and emitting a composite bar type.
-        15 microseconds can be useful in a backtest context, when aggregating internal bars
-        from internal bars several times so all messages are processed before a timer triggers.
 
     Raises
     ------
@@ -815,10 +1392,22 @@ cdef class TimeBarAggregator(BarAggregator):
     ) -> None:
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type.standard(),
+            bar_type=bar_type,
             handler=handler,
         )
         self._clock = clock
+        self._timestamp_on_close = timestamp_on_close
+        self._skip_first_non_full_bar = skip_first_non_full_bar
+        self._build_with_no_updates = build_with_no_updates
+        self._bar_build_delay = bar_build_delay
+        self._time_bars_origin_offset = time_bars_origin_offset or 0
+        self._timer_name = f"time_bar_{self.bar_type}"
+        self.interval = self._get_interval()
+        self.interval_ns = self._get_interval_ns()
+        self.stored_open_ns = 0
+        self.next_close_ns = 0
+        self.historical_mode = False
+        self._historical_events = []
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -829,41 +1418,73 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"Invalid interval_type: {interval_type}. Must be 'left-open' or 'right-open'.",
             )
 
-        self._timestamp_on_close = timestamp_on_close
-        self._skip_first_non_full_bar = skip_first_non_full_bar
-        self._build_with_no_updates = build_with_no_updates
-        self._bar_build_delay = bar_build_delay
-        self._time_bars_origin_offset = time_bars_origin_offset or 0
-
         if type(self._time_bars_origin_offset) is int:
             self._time_bars_origin_offset = pd.Timedelta(self._time_bars_origin_offset)
-
-        self._timer_name = None
-        self._build_on_next_tick = False
-        self._batch_open_ns = 0
-        self._batch_next_close_ns = 0
-
-        self.interval = self._get_interval()
-        self.interval_ns = self._get_interval_ns()
-        self._set_build_timer()
-        self.next_close_ns = self._clock.next_time_ns(self._timer_name)
-
-        cdef datetime now = self._clock.utc_now()
-        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time(now))
-        self._stored_close_ns = 0
 
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
 
+    cpdef void set_clock(self, Clock clock):
+        self._clock = clock
+
+    cpdef void start_timer(self):
+        # Computing start_time
+        cdef datetime now = self._clock.utc_now()
+        cdef datetime start_time = self.get_start_time(now)
+        start_time += timedelta(microseconds=self._bar_build_delay)
+
+        # Closing a partial bar at the transition from historical to backtest data
+        cdef bint fire_immediately = (start_time == now)
+
+        self._skip_first_non_full_bar = self._skip_first_non_full_bar and now > start_time
+
+        if self.bar_type.spec.aggregation not in (BarAggregation.MONTH, BarAggregation.YEAR):
+            self._clock.set_timer(
+                name=self._timer_name,
+                interval=self.interval,
+                start_time=start_time,
+                stop_time=None,
+                callback=self._build_bar,
+                allow_past=True,
+                fire_immediately=fire_immediately,
+            )
+
+            if fire_immediately:
+                self.next_close_ns = dt_to_unix_nanos(start_time)
+            else:
+                self.next_close_ns = dt_to_unix_nanos(start_time + self.interval)
+
+            self.stored_open_ns = self.next_close_ns - self.interval_ns
+        else:
+            # The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
+            if self.bar_type.spec.aggregation == BarAggregation.MONTH:
+                alert_time = start_time + (pd.DateOffset(months=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
+            elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+                alert_time = start_time + (pd.DateOffset(years=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
+            else:
+                alert_time = start_time
+
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=alert_time,
+                callback=self._build_bar,
+                override=True,
+                allow_past=True,
+            )
+            self.next_close_ns = alert_time.value
+            self.stored_open_ns = start_time.value
+
+        self._log.debug(f"Started timer {self._timer_name}, {start_time=}, {self.historical_mode=}, "
+                        f"{fire_immediately=}, {start_time=}, {now=}, {self._bar_build_delay=}")
+
+    cpdef void stop_timer(self):
+        cdef str timer_name = str(self.bar_type)
+        if timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(timer_name)
+
     def get_start_time(self, now: datetime) -> datetime:
         """
-        Return the start time for the aggregators next bar.
-
-        Returns
-        -------
-        datetime
-            The timestamp (UTC).
-
+        Return the start time for the aggregator's next bar.
         """
         step = self.bar_type.spec.step
         aggregation = self.bar_type.spec.aggregation
@@ -885,7 +1506,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time += self._time_bars_origin_offset
 
             if now < start_time:
-                start_time -= pd.Timedelta(weeks=1)
+                start_time -= pd.Timedelta(weeks=step)
         elif aggregation == BarAggregation.MONTH:
             start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
 
@@ -899,6 +1520,14 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time += pd.DateOffset(months=step)
 
             start_time -= pd.DateOffset(months=step)
+        elif aggregation == BarAggregation.YEAR:
+            start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
+
+            if self._time_bars_origin_offset is not None:
+                start_time += self._time_bars_origin_offset
+
+            if now < start_time:
+                start_time -= pd.DateOffset(years=step)
         else:  # pragma: no cover (design-time error)
             raise ValueError(
                 f"Aggregation type not supported for time bars, "
@@ -907,105 +1536,99 @@ cdef class TimeBarAggregator(BarAggregator):
 
         return start_time
 
-    cdef timedelta _get_interval(self):
-        cdef BarAggregation aggregation = self.bar_type.spec.aggregation
-        cdef int step = self.bar_type.spec.step
-
-        if aggregation == BarAggregation.MILLISECOND:
-            return timedelta(milliseconds=(1 * step))
-        elif aggregation == BarAggregation.SECOND:
-            return timedelta(seconds=(1 * step))
-        elif aggregation == BarAggregation.MINUTE:
-            return timedelta(minutes=(1 * step))
-        elif aggregation == BarAggregation.HOUR:
-            return timedelta(hours=(1 * step))
-        elif aggregation == BarAggregation.DAY:
-            return timedelta(days=(1 * step))
-        elif aggregation == BarAggregation.WEEK:
-            return timedelta(days=(7 * step))
-        elif aggregation == BarAggregation.MONTH:
-            # not actually used
-            return timedelta(days=0)
-        else:
-            # Design time error
-            raise ValueError(
-                f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
-            )
-
     cdef uint64_t _get_interval_ns(self):
+        return self._get_interval().value
+
+    def _get_interval(self) -> pd.Timedelta:
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
         cdef int step = self.bar_type.spec.step
 
         if aggregation == BarAggregation.MILLISECOND:
-            return millis_to_nanos(step)
+            return pd.Timedelta(milliseconds=(1 * step))
         elif aggregation == BarAggregation.SECOND:
-            return secs_to_nanos(step)
+            return pd.Timedelta(seconds=(1 * step))
         elif aggregation == BarAggregation.MINUTE:
-            return secs_to_nanos(step) * 60
+            return pd.Timedelta(minutes=(1 * step))
         elif aggregation == BarAggregation.HOUR:
-            return secs_to_nanos(step) * 60 * 60
+            return pd.Timedelta(hours=(1 * step))
         elif aggregation == BarAggregation.DAY:
-            return secs_to_nanos(step) * 60 * 60 * 24
+            return pd.Timedelta(days=(1 * step))
         elif aggregation == BarAggregation.WEEK:
-            return secs_to_nanos(step) * 60 * 60 * 24 * 7
-        elif aggregation == BarAggregation.MONTH:
+            return pd.Timedelta(days=(7 * step))
+        elif aggregation in (BarAggregation.MONTH, BarAggregation.YEAR):
             # not actually used
-            return 0
+            return pd.Timedelta(days=0)
         else:
             # Design time error
             raise ValueError(
                 f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
-    cpdef void _set_build_timer(self):
-        cdef int step = self.bar_type.spec.step
-        self._timer_name = str(self.bar_type)
-        cdef datetime now = self._clock.utc_now()
-        cdef datetime start_time = self.get_start_time(now)
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
 
-        # Consider near-boundary starts within a small tolerance as on-boundary
-        cdef uint64_t now_ns = dt_to_unix_nanos(now)
-        cdef uint64_t start_ns = dt_to_unix_nanos(start_time)
-        cdef uint64_t diff_ns = now_ns - start_ns if now_ns >= start_ns else start_ns - now_ns
+        if self.historical_mode:
+            self._process_historical_events(ts_init)
 
-        # Use a step-aware tolerance capped at 1 ms. For MONTH aggregation
-        # (where interval_ns == 0), default to 1 ms.
-        cdef uint64_t tolerance_ns = 1_000_000 if self.interval_ns == 0 else self.interval_ns // 1000
-        if tolerance_ns > 1_000_000:
-            tolerance_ns = 1_000_000
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
 
-        if diff_ns <= tolerance_ns:
-            self._skip_first_non_full_bar = False
+        if self.historical_mode:
+            self._process_historical_events(ts_init)
 
-        start_time += timedelta(microseconds=self._bar_build_delay)
-        self._log.debug(f"Timer {start_time=}")
+    cdef void _process_historical_events(self, uint64_t ts_init):
+        if self._clock.timestamp_ns() == 0:
+            self._clock.set_time(ts_init)
+            self.start_timer()
 
-        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
-            self._clock.set_timer(
-                name=self._timer_name,
-                interval=self.interval,
-                start_time=start_time,
-                stop_time=None,
-                callback=self._build_bar,
-            )
+        # Advance this aggregator's independent clock and collect timer events
+        event_handlers = self._clock.advance_time(ts_init, set_time=True)
+
+        # Process timer events after data processing
+        for event_handler in event_handlers:
+            self._build_bar(event_handler.event)
+
+    cpdef void _build_bar(self, TimeEvent event):
+        if not self._builder.initialized:
+            return
+
+        if not self._build_with_no_updates and self._builder.count == 0:
+            return  # Do not build bar when no update
+
+        cdef uint64_t ts_init = event.ts_event
+        cdef uint64_t ts_event
+
+        if self._is_left_open:
+            ts_event = event.ts_event if self._timestamp_on_close else self.stored_open_ns
         else:
-            # The monthly alert time is defined iteratively at each alert time as there is no regular interval
-            alert_time = start_time + pd.DateOffset(months=step)
+            ts_event = self.stored_open_ns
 
+        self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+
+        # Close time becomes the next open time
+        self.stored_open_ns = event.ts_event
+
+        if self.bar_type.spec.aggregation == BarAggregation.MONTH:
+            alert_time = unix_nanos_to_dt(event.ts_event) + pd.DateOffset(months=self.bar_type.spec.step)
             self._clock.set_time_alert(
                 name=self._timer_name,
                 alert_time=alert_time,
                 callback=self._build_bar,
                 override=True,
             )
-
-        self._log.debug(f"Started timer {self._timer_name}")
-
-    cpdef void stop(self):
-        """
-        Stop the bar aggregator.
-        """
-        self._clock.cancel_timer(str(self.bar_type))
+            self.next_close_ns = dt_to_unix_nanos(alert_time)
+        elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+            alert_time = unix_nanos_to_dt(event.ts_event) + pd.DateOffset(years=self.bar_type.spec.step)
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=alert_time,
+                callback=self._build_bar,
+                override=True,
+            )
+            self.next_close_ns = dt_to_unix_nanos(alert_time)
+        else:
+            # On receiving this event, timer should now have a new `next_time_ns`
+            self.next_close_ns = self._clock.next_time_ns(self._timer_name)
 
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
         if self._skip_first_non_full_bar:
@@ -1014,165 +1637,13 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             BarAggregator._build_and_send(self, ts_event, ts_init)
 
-    def _start_batch_time(self, uint64_t time_ns):
-        cdef int step = self.bar_type.spec.step
-        self._batch_mode = True
 
-        start_time = self.get_start_time(unix_nanos_to_dt(time_ns))
-        self._batch_open_ns = dt_to_unix_nanos(start_time)
-
-        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
-            if self._batch_open_ns == time_ns:
-                self._batch_open_ns -= self.interval_ns
-
-            self._batch_next_close_ns = self._batch_open_ns + self.interval_ns
-        else:
-            if self._batch_open_ns == time_ns:
-                self._batch_open_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_open_ns) - pd.DateOffset(months=step))
-
-            self._batch_next_close_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_open_ns) + pd.DateOffset(months=step))
-
-    cdef void _batch_pre_update(self, uint64_t time_ns):
-        if time_ns > self._batch_next_close_ns and self._builder.initialized:
-            ts_init = self._batch_next_close_ns
-
-            # Adjusting the timestamp logic based on interval_type
-            if self._is_left_open:
-                ts_event = self._batch_next_close_ns if self._timestamp_on_close else self._batch_open_ns
-            else:
-                ts_event = self._batch_open_ns
-
-            self._build_and_send(ts_event=ts_event, ts_init=ts_init)
-
-    cdef void _batch_post_update(self, uint64_t time_ns):
-        cdef int step = self.bar_type.spec.step
-
-        # Update has already been done, resetting _batch_next_close_ns
-        if not self._batch_mode and time_ns == self._batch_next_close_ns and time_ns > self._stored_open_ns:
-            self._batch_next_close_ns = 0
-            return
-
-        if time_ns > self._batch_next_close_ns:
-            # We ensure that _batch_next_close_ns and _batch_open_ns are coherent with the last builder update
-            if self.bar_type.spec.aggregation != BarAggregation.MONTH:
-                while self._batch_next_close_ns < time_ns:
-                    self._batch_next_close_ns += self.interval_ns
-
-                self._batch_open_ns = self._batch_next_close_ns - self.interval_ns
-            else:
-                while self._batch_next_close_ns < time_ns:
-                    self._batch_next_close_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_next_close_ns) + pd.DateOffset(months=step))
-
-                self._batch_open_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_next_close_ns) - pd.DateOffset(months=step))
-
-        if time_ns == self._batch_next_close_ns:
-            # Adjusting the timestamp logic based on interval_type
-            if self._is_left_open:
-                ts_event = self._batch_next_close_ns if self._timestamp_on_close else self._batch_open_ns
-            else:
-                ts_event = self._batch_open_ns
-
-            self._build_and_send(ts_event=ts_event, ts_init=time_ns)
-            self._batch_open_ns = self._batch_next_close_ns
-
-            if self.bar_type.spec.aggregation != BarAggregation.MONTH:
-                self._batch_next_close_ns += self.interval_ns
-            else:
-                self._batch_next_close_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_next_close_ns) + pd.DateOffset(months=step))
-
-        # Delay to reset of _batch_next_close_ns to allow the creation of a last histo bar
-        # when transitioning to regular bars
-        if not self._batch_mode:
-            self._batch_next_close_ns = 0
-
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
-        if self._batch_next_close_ns != 0:
-            self._batch_pre_update(ts_init)
-
-        self._builder.update(price, size, ts_init)
-
-        if self._build_on_next_tick:
-            if ts_init <= self._stored_close_ns:
-                # Adjusting the timestamp logic based on interval_type
-                if self._is_left_open:
-                    ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
-                else:
-                    ts_event = self._stored_open_ns
-
-                self._build_and_send(ts_event=ts_event, ts_init=ts_init)
-
-            # Reset flag and clear stored close
-            self._build_on_next_tick = False
-            self._stored_close_ns = 0
-
-        if self._batch_next_close_ns != 0:
-            self._batch_post_update(ts_init)
-
-    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
-        if self._batch_next_close_ns != 0:
-            self._batch_pre_update(ts_init)
-
-        self._builder.update_bar(bar, volume, ts_init)
-
-        if self._build_on_next_tick:
-            if ts_init <= self._stored_close_ns:
-                # Adjusting the timestamp logic based on interval_type
-                if self._is_left_open:
-                    ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
-                else:
-                    ts_event = self._stored_open_ns
-
-                self._build_and_send(ts_event=ts_event, ts_init=ts_init)
-
-            # Reset flag and clear stored close
-            self._build_on_next_tick = False
-            self._stored_close_ns = 0
-
-        if self._batch_next_close_ns != 0:
-            self._batch_post_update(ts_init)
-
-    cpdef void _build_bar(self, TimeEvent event):
-        if not self._builder.initialized:
-            # Set flag to build on next close with the stored close time
-            # _build_on_next_tick is used to avoid a race condition between a data update and a TimeEvent from the timer
-            self._build_on_next_tick = True
-            self._stored_close_ns = self.next_close_ns
-            return
-
-        if not self._build_with_no_updates and self._builder.count == 0:
-            return  # Do not build and emit bar
-
-        cdef uint64_t ts_init = event.ts_event
-        cdef uint64_t ts_event
-        if self._is_left_open:
-            ts_event = event.ts_event if self._timestamp_on_close else self._stored_open_ns
-        else:
-            ts_event = self._stored_open_ns
-
-        self._build_and_send(ts_event=ts_event, ts_init=ts_init)
-
-        # Close time becomes the next open time
-        self._stored_open_ns = event.ts_event
-
-        cdef int step = self.bar_type.spec.step
-
-        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
-            # On receiving this event, timer should now have a new `next_time_ns`
-            self.next_close_ns = self._clock.next_time_ns(self._timer_name)
-        else:
-            alert_time = unix_nanos_to_dt(event.ts_event) + pd.DateOffset(months=step)
-
-            self._clock.set_time_alert(
-                name=self._timer_name,
-                alert_time=alert_time,
-                callback=self._build_bar,
-                override=True,
-            )
-
-            self.next_close_ns = dt_to_unix_nanos(alert_time)
-
-
-def find_closest_smaller_time(now: pd.Timestamp, daily_time_origin: pd.Timedelta, period: pd.Timedelta) -> pd.Timestamp:
+def find_closest_smaller_time(
+    now: pd.Timestamp,
+    daily_time_origin: pd.Timedelta,
+    period: pd.Timedelta
+) -> pd.Timestamp:
+    """Find the closest bar start_time <= now"""
     day_start = now.floor(freq="d")
     base_time = day_start + daily_time_origin
 
@@ -1182,3 +1653,342 @@ def find_closest_smaller_time(now: pd.Timestamp, daily_time_origin: pd.Timedelta
     closest_time = base_time + num_periods * period
 
     return closest_time
+
+
+cdef class SpreadQuoteAggregator:
+    """
+    Provides a spread quote generator for creating synthetic quotes from leg instruments.
+
+    The generator receives quote ticks from leg instruments via handler callbacks and generates
+    synthetic quotes for the spread instrument. Pricing logic differs by instrument type:
+
+    - **Futures spreads**: Calculates weighted bid/ask prices based on leg ratios (positive ratios
+      use bid/ask directly, negative ratios invert bid/ask).
+    - **Option spreads**: Uses vega-weighted spread calculation to determine bid/ask spreads,
+      then applies to the weighted mid-price based on leg ratios.
+
+    The aggregator requires quotes from all legs before building a spread quote. It can operate
+    in two modes:
+
+    1. **Quote-driven mode** (`update_interval_seconds=None`): Receives quote tick updates via handler
+       and builds spread quotes immediately when all legs have received quotes. This is the default
+       and recommended mode for most use cases.
+
+    2. **Timer-driven mode** (`update_interval_seconds=int`): Uses a periodic timer to read quotes
+       from internal state and build spread quotes at regular intervals. In historical mode, timer
+       events are processed when quotes arrive, ensuring all quotes for a given timestamp are
+       received before processing timer events for that timestamp.
+
+    In historical mode, the aggregator advances the provided clock independently with incoming
+    data timestamps, similar to TimeBarAggregator. Timer events are generated by advancing the
+    clock and are processed only when all legs have received quotes for the corresponding timestamp.
+
+    Parameters
+    ----------
+    spread_instrument : Instrument
+        The spread instrument to generate quotes for.
+    handler : Callable[[QuoteTick], None]
+        The quote handler callback that receives generated spread quotes.
+    greeks_calculator : GreeksCalculator
+        The greeks calculator for calculating option greeks (required for option spreads).
+    clock : Clock
+        The clock for timing operations and timer management.
+    historical : bool
+        Whether the aggregator is processing historical data. When True, the clock is advanced
+        independently with incoming data timestamps.
+    update_interval_seconds : int | None, default None
+        The interval in seconds for timer-driven quote building. If None, uses quote-driven mode
+        (builds immediately when all legs have quotes). If an integer, uses timer-driven mode
+        (reads from internal state at the specified interval).
+    quote_build_delay : int, default 0
+        The time delay (microseconds) before building and emitting a quote.
+
+    Raises
+    ------
+    ValueError
+        If `spread_instrument` has one or fewer legs.
+    """
+
+    def __init__(
+        self,
+        Instrument spread_instrument not None,
+        handler not None: Callable[[QuoteTick], None],
+        GreeksCalculator greeks_calculator not None,
+        Clock clock not None,
+        bint historical,
+        object update_interval_seconds = None,
+        int quote_build_delay = 0,
+    ):
+        self._handler = handler
+        self._clock = clock
+        self._log = Logger(name=f"{type(self).__name__}")
+
+        self._spread_instrument = spread_instrument
+        self._spread_instrument_id = spread_instrument.id
+
+        # Get spread legs from instrument
+        self._legs = spread_instrument.legs()
+        if not self._legs or len(self._legs) <= 1:
+            raise ValueError(f"Spread instrument {spread_instrument.id} must have more than one leg")
+
+        self._greeks_calculator = greeks_calculator
+
+        self._leg_ids = [leg[0] for leg in self._legs]
+        self._ratios = np.array([leg[1] for leg in self._legs])
+        self._n_legs = len(self._legs)
+        self._mid_prices = np.zeros(self._n_legs)
+        self._bid_prices = np.zeros(self._n_legs)
+        self._ask_prices = np.zeros(self._n_legs)
+        self._vegas = np.zeros(self._n_legs)
+        self._bid_ask_spreads = np.zeros(self._n_legs)
+        self._bid_sizes = np.zeros(self._n_legs)
+        self._ask_sizes = np.zeros(self._n_legs)
+        self._last_quotes = {}
+
+        self._is_futures_spread = self._spread_instrument.instrument_class == InstrumentClass.FUTURES_SPREAD
+        self.historical_mode = historical
+        self._update_interval_seconds = update_interval_seconds
+        self._quote_build_delay = quote_build_delay
+        self.is_running = False
+        self._historical_events = []
+
+        # Timers on a same clock execute first based on their timer name
+        # "spread_quote_..." < "time_bar_..."
+        self._timer_name = f"spread_quote_{self._spread_instrument_id}"
+        self._has_update = False
+
+    cpdef void set_historical_mode(self, bint historical_mode, handler: Callable[[QuoteTick], None], GreeksCalculator greeks_calculator):
+        Condition.callable(handler, "handler")
+        Condition.not_none(greeks_calculator, "greeks_calculator")
+
+        self.historical_mode = historical_mode
+        self._handler = handler
+        self._greeks_calculator = greeks_calculator
+
+    cpdef void set_running(self, bint is_running):
+        self.is_running = is_running
+
+    cpdef void set_clock(self, Clock clock):
+        self._clock = clock
+
+    cpdef void start_timer(self):
+        if self._update_interval_seconds is None:
+            return
+
+        cdef datetime now = self._clock.utc_now()
+        start_time = find_closest_smaller_time(now, pd.Timedelta(0), pd.Timedelta(seconds=<int>self._update_interval_seconds))
+        start_time += timedelta(microseconds=self._quote_build_delay)
+
+        # Determine if we should fire immediately (if start_time equals now)
+        cdef bint fire_immediately = (start_time == now)
+
+        self._clock.set_timer(
+            name=self._timer_name,
+            interval=timedelta(seconds=<int>self._update_interval_seconds),
+            callback=self._build_and_send_quote_callback,
+            start_time=start_time,
+            stop_time=None,   # Run indefinitely
+            allow_past=True,  # Allow past start times
+            fire_immediately=fire_immediately,
+        )
+
+    cpdef void stop_timer(self):
+        if self._update_interval_seconds is None:
+            return
+
+        if self._timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(self._timer_name)
+
+    cpdef void handle_quote_tick(self, QuoteTick tick):
+        if self._update_interval_seconds is not None and self.historical_mode:
+            self._process_historical_events(tick.ts_init)
+
+        self._last_quotes[tick.instrument_id] = tick
+        self._has_update = True
+
+        self._log.debug(f"Component QuoteTick: {tick}, ts={unix_nanos_to_iso8601(tick.ts_init)}")
+
+        if self._update_interval_seconds is None and len(self._last_quotes) == self._n_legs:
+            self._build_and_send_quote(tick.ts_init)
+            return
+
+    cdef void _process_historical_events(self, uint64_t ts_init):
+        if self._clock.timestamp_ns() == 0:
+            self._clock.set_time(ts_init)
+            self.start_timer()
+
+        self._historical_events.extend(self._clock.advance_time(ts_init, set_time=True))
+
+        if not self._historical_events:
+            return
+
+        # Don't process the last event and keep it if it matches ts_init
+        # This is to ensure that all quotes are received for a same time
+        last_event = self._historical_events[-1]
+        if last_event.event.ts_event == ts_init:
+            event_handlers = self._historical_events[:-1]
+            self._historical_events = [last_event]
+        else:
+            event_handlers = self._historical_events
+            self._historical_events.clear()
+
+        if len(self._last_quotes) != self._n_legs:
+            return
+
+        # Process events if all legs have quotes
+        for event_handler in event_handlers:
+            self._build_and_send_quote(event_handler.event.ts_event)
+
+    cdef void _build_and_send_quote_callback(self, TimeEvent event):
+        if len(self._last_quotes) != self._n_legs:
+            return
+
+        self._build_and_send_quote(event.ts_init)
+
+    cdef void _build_and_send_quote(self, uint64_t ts_init):
+        if not self._has_update:
+            return
+
+        for idx, leg_id in enumerate(self._leg_ids):
+            tick = self._last_quotes.get(leg_id)
+            if tick is None:
+                self._log.error(
+                    f"SpreadQuoteAggregator[{self._spread_instrument_id}]: Missing quote for leg {leg_id}"
+                )
+                return  # Cannot build quote without all legs
+
+            ask_price = tick.ask_price.as_double()
+            bid_price = tick.bid_price.as_double()
+
+            self._bid_prices[idx] = bid_price
+            self._ask_prices[idx] = ask_price
+            self._bid_sizes[idx] = tick.bid_size.as_double()
+            self._ask_sizes[idx] = tick.ask_size.as_double()
+
+            if not self._is_futures_spread:
+                self._mid_prices[idx] = (ask_price + bid_price) * 0.5
+                self._bid_ask_spreads[idx] = ask_price - bid_price
+                greeks_data = self._greeks_calculator.instrument_greeks(
+                    leg_id,
+                    percent_greeks=True,
+                    use_cached_greeks=True,
+                    vega_time_weight_base=30,
+                )
+                if greeks_data is not None:
+                    self._vegas[idx] = greeks_data.vega
+
+        cdef tuple raw_bid_ask_prices
+        if self._is_futures_spread:
+            raw_bid_ask_prices = self._create_futures_spread_prices()
+        else:
+            raw_bid_ask_prices = self._create_option_spread_prices()
+
+        spread_quote = self._create_quote_tick_from_raw_prices(raw_bid_ask_prices[0], raw_bid_ask_prices[1], ts_init)
+
+        self._has_update = False
+        self._handler(spread_quote)
+
+    cdef tuple _create_option_spread_prices(self):
+        vega_multipliers = np.divide(
+            self._bid_ask_spreads,
+            self._vegas,
+            out=np.zeros_like(self._vegas),
+            where=self._vegas != 0
+        )
+
+        # Filter out zero multipliers before taking mean
+        non_zero_multipliers = vega_multipliers[vega_multipliers != 0]
+        if len(non_zero_multipliers) == 0:
+            self._log.warning(
+                f"No vega information available for the components of {self._spread_instrument_id}. "
+                f"Will generate spread quote using component quotes only. "
+                f"Subscribe to some underlying price information for more precise quotes."
+            )
+            return self._create_futures_spread_prices()
+
+        vega_multiplier = np.abs(non_zero_multipliers).mean()
+        spread_vega = abs(np.dot(self._vegas, self._ratios))
+
+        bid_ask_spread = spread_vega * vega_multiplier
+        self._log.debug(f"{self._bid_ask_spreads=}, {self._vegas=}, {vega_multipliers=}, "
+                        f"{spread_vega=}, {vega_multiplier=}, {bid_ask_spread=}")
+
+        spread_mid_price = (self._mid_prices * self._ratios).sum()
+        raw_bid_price = spread_mid_price - bid_ask_spread * 0.5
+        raw_ask_price = spread_mid_price + bid_ask_spread * 0.5
+
+        return (raw_bid_price, raw_ask_price)
+
+    cdef tuple _create_futures_spread_prices(self):
+        # Calculate spread ask: for positive ratios use ask, for negative ratios use bid
+        # Calculate spread bid: for positive ratios use bid, for negative ratios use ask
+
+        cdef double raw_ask_price = 0.0
+        cdef double raw_bid_price = 0.0
+
+        cdef int i
+        for i in range(self._n_legs):
+            if self._ratios[i] >= 0:
+                raw_ask_price += self._ratios[i] * self._ask_prices[i]
+                raw_bid_price += self._ratios[i] * self._bid_prices[i]
+            else:
+                raw_ask_price += self._ratios[i] * self._bid_prices[i]
+                raw_bid_price += self._ratios[i] * self._ask_prices[i]
+
+        return (raw_bid_price, raw_ask_price)
+
+    cdef QuoteTick _create_quote_tick_from_raw_prices(self, double raw_bid_price, double raw_ask_price, uint64_t ts_init):
+        # Apply tick scheme if available
+        if self._spread_instrument._tick_scheme is not None:
+            if raw_bid_price >= 0.:
+                bid_price = self._spread_instrument._tick_scheme.next_bid_price(raw_bid_price)
+            else:
+                bid_price = self._spread_instrument.make_price(-self._spread_instrument._tick_scheme.next_ask_price(-raw_bid_price).as_double())
+
+            if raw_ask_price >= 0.:
+                ask_price = self._spread_instrument._tick_scheme.next_ask_price(raw_ask_price)
+            else:
+                ask_price = self._spread_instrument.make_price(-self._spread_instrument._tick_scheme.next_bid_price(-raw_ask_price).as_double())
+
+            self._log.debug(f"Bid ask created using tick_scheme: {bid_price=}, {ask_price=}, {raw_bid_price=}, {raw_ask_price=}, is_futures_spread={self._is_futures_spread}")
+        else:
+            # Fallback to simple method if no tick scheme
+            bid_price = self._spread_instrument.make_price(raw_bid_price)
+            ask_price = self._spread_instrument.make_price(raw_ask_price)
+            self._log.debug(f"Bid ask created: {bid_price=}, {ask_price=}, {raw_bid_price=}, {raw_ask_price=}, is_futures_spread={self._is_futures_spread}")
+
+        # Create bid and ask sizes (use minimum of leg sizes based on ratio signs)
+        cdef double min_bid_size = float('inf')
+        cdef double min_ask_size = float('inf')
+
+        cdef double abs_ratio
+        cdef int i
+        for i in range(self._n_legs):
+            abs_ratio = fabs(self._ratios[i])
+            if self._ratios[i] >= 0:
+                if self._bid_sizes[i] / abs_ratio < min_bid_size:
+                    min_bid_size = self._bid_sizes[i] / abs_ratio
+
+                if self._ask_sizes[i] / abs_ratio < min_ask_size:
+                    min_ask_size = self._ask_sizes[i] / abs_ratio
+            else:
+                if self._ask_sizes[i] / abs_ratio < min_bid_size:
+                    min_bid_size = self._ask_sizes[i] / abs_ratio
+
+                if self._bid_sizes[i] / abs_ratio < min_ask_size:
+                    min_ask_size = self._bid_sizes[i] / abs_ratio
+
+        bid_size = self._spread_instrument.make_qty(min_bid_size)
+        ask_size = self._spread_instrument.make_qty(min_ask_size)
+
+        cdef QuoteTick spread_quote = QuoteTick(
+            instrument_id=self._spread_instrument_id,
+            bid_price=bid_price,
+            ask_price=ask_price,
+            bid_size=bid_size,
+            ask_size=ask_size,
+            ts_event=ts_init,
+            ts_init=ts_init,
+        )
+
+        return spread_quote

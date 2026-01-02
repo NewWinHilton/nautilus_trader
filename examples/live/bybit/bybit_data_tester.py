@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -58,10 +58,9 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_types=[product_type],  # Will load all instruments
+            product_types=(product_type,),  # Will load all instruments
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
-            recv_window_ms=5_000,  # Default
         ),
     },
     timeout_connection=20.0,
@@ -78,11 +77,14 @@ node = TradingNode(config=config_node)
 config_tester = DataTesterConfig(
     instrument_ids=[instrument_id],
     bar_types=[BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")],
-    # subscribe_book=True,
+    subscribe_instrument=True,
+    # subscribe_book_at_interval=True,
     subscribe_quotes=True,
     subscribe_trades=True,
     subscribe_funding_rates=True,
     subscribe_bars=True,
+    # book_interval_ms=1,
+    # request_bars=True,
 )
 
 # Instantiate your actor

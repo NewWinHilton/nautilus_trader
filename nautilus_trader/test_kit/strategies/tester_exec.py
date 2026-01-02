@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -70,8 +70,8 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     book_levels_to_print: PositiveInt = 10
     open_position_on_start_qty: Decimal | None = None
     open_position_time_in_force: TimeInForce = TimeInForce.GTC
-    enable_buys: bool = True
-    enable_sells: bool = True
+    enable_limit_buys: bool = True
+    enable_limit_sells: bool = True
     enable_stop_buys: bool = False
     enable_stop_sells: bool = False
     tob_offset_ticks: PositiveInt = 500  # Definitely out of the market
@@ -98,6 +98,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     dry_run: bool = False
     log_data: bool = True
     test_reject_post_only: bool = False
+    test_reject_reduce_only: bool = False
     can_unsubscribe: bool = True
 
 
@@ -232,10 +233,10 @@ class ExecTester(Strategy):
         if self.instrument is None or self.config.dry_run:
             return
 
-        if self.config.enable_buys:
+        if self.config.enable_limit_buys:
             self.maintain_buy_orders(self.instrument, best_bid, best_ask)
 
-        if self.config.enable_sells:
+        if self.config.enable_limit_sells:
             self.maintain_sell_orders(self.instrument, best_bid, best_ask)
 
         if self.config.enable_stop_buys:
@@ -315,12 +316,15 @@ class ExecTester(Strategy):
             self.log.warning(f"Open position with {net_qty}, skipping")
             return
 
+        quantity = self.instrument.make_qty(abs(net_qty))
+
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY if net_qty > 0 else OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.config.order_qty),
+            quantity=quantity,
             time_in_force=self.config.open_position_time_in_force,
             quote_quantity=self.config.use_quote_quantity,
+            reduce_only=self.config.test_reject_reduce_only,
         )
 
         self.submit_order(
@@ -344,10 +348,10 @@ class ExecTester(Strategy):
             self.log.warning(f"Dry run, skipping create {order_side} order")
             return
 
-        if order_side == OrderSide.BUY and not self.config.enable_buys:
+        if order_side == OrderSide.BUY and not self.config.enable_limit_buys:
             self.log.warning("BUY orders not enabled, skipping")
             return
-        elif order_side == OrderSide.SELL and not self.config.enable_sells:
+        elif order_side == OrderSide.SELL and not self.config.enable_limit_sells:
             self.log.warning("SELL orders not enabled, skipping")
             return
 
@@ -417,10 +421,10 @@ class ExecTester(Strategy):
             self.log.warning(f"Dry run, skipping create {order_side} bracket order")
             return
 
-        if order_side == OrderSide.BUY and not self.config.enable_buys:
+        if order_side == OrderSide.BUY and not self.config.enable_limit_buys:
             self.log.warning("BUY orders not enabled, skipping")
             return
-        elif order_side == OrderSide.SELL and not self.config.enable_sells:
+        elif order_side == OrderSide.SELL and not self.config.enable_limit_sells:
             self.log.warning("SELL orders not enabled, skipping")
             return
 
@@ -681,8 +685,7 @@ class ExecTester(Strategy):
             current_trigger = self.get_order_trigger_price(self.buy_stop_order)
             if current_trigger and current_trigger != trigger_price:
                 if self.config.modify_stop_orders_to_maintain_offset:
-                    # Modification not supported for all stop order types
-                    self.log.warning("Stop order modification not yet implemented")
+                    self.modify_stop_order(self.buy_stop_order, trigger_price, limit_price)
                 elif self.config.cancel_replace_stop_orders_to_maintain_offset:
                     self.cancel_order(self.buy_stop_order)
                     self.submit_stop_order(OrderSide.BUY, trigger_price, limit_price)
@@ -729,22 +732,36 @@ class ExecTester(Strategy):
             current_trigger = self.get_order_trigger_price(self.sell_stop_order)
             if current_trigger and current_trigger != trigger_price:
                 if self.config.modify_stop_orders_to_maintain_offset:
-                    # Modification not supported for all stop order types
-                    self.log.warning("Stop order modification not yet implemented")
+                    self.modify_stop_order(self.sell_stop_order, trigger_price, limit_price)
                 elif self.config.cancel_replace_stop_orders_to_maintain_offset:
                     self.cancel_order(self.sell_stop_order)
                     self.submit_stop_order(OrderSide.SELL, trigger_price, limit_price)
 
     def get_order_trigger_price(self, order: Order) -> Price | None:
-        """
-        Get the trigger price for stop/conditional orders.
-        """
         if isinstance(
             order,
             StopMarketOrder | StopLimitOrder | MarketIfTouchedOrder | LimitIfTouchedOrder,
         ):
             return order.trigger_price
         return None
+
+    def modify_stop_order(
+        self,
+        order: Order,
+        trigger_price: Price,
+        limit_price: Price | None = None,
+    ) -> None:
+        if isinstance(order, StopMarketOrder | MarketIfTouchedOrder):
+            # Market-type stops only have trigger price
+            self.modify_order(order, trigger_price=trigger_price)
+        elif isinstance(order, StopLimitOrder | LimitIfTouchedOrder):
+            # Limit-type stops have both trigger and limit price
+            if limit_price is not None:
+                self.modify_order(order, price=limit_price, trigger_price=trigger_price)
+            else:
+                self.modify_order(order, trigger_price=trigger_price)
+        else:
+            self.log.warning(f"Cannot modify order of type {type(order).__name__}")
 
     def on_stop(self) -> None:  # noqa: C901 (too complex)
         """

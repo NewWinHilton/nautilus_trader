@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Bybit API credential storage and signing helpers.
+
+#![allow(unused_assignments)] // Fields are used in methods, false positive from nightly
 
 use std::fmt::Debug;
 
@@ -46,7 +48,7 @@ impl Credential {
         let api_key = api_key.into();
         let api_secret_bytes = api_secret.into().into_bytes();
 
-        let api_key = Ustr::from(api_key.as_str());
+        let api_key = Ustr::from(&api_key);
 
         Self {
             api_key,
@@ -58,6 +60,15 @@ impl Credential {
     #[must_use]
     pub fn api_key(&self) -> &Ustr {
         &self.api_key
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    ///
+    /// Shows first 4 and last 4 characters with ellipsis in between.
+    /// For keys shorter than 8 characters, shows asterisks only.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        nautilus_core::string::mask_api_key(self.api_key.as_str())
     }
 
     /// Produces the Bybit WebSocket authentication signature for the provided expiry timestamp.
@@ -101,10 +112,6 @@ impl Credential {
         hex::encode(tag.as_ref())
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

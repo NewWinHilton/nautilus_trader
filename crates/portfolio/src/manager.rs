@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,9 @@
 
 //! Provides account management functionality.
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::AHashMap;
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -308,7 +309,7 @@ impl AccountsManager {
             ));
         }
 
-        let mut total_locked: HashMap<Currency, Money> = HashMap::new();
+        let mut total_locked: AHashMap<Currency, Money> = AHashMap::new();
         let mut base_xrate: Option<f64> = None;
 
         let mut currency = instrument.settlement_currency();
@@ -764,10 +765,6 @@ impl AccountsManager {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
@@ -788,7 +785,7 @@ mod tests {
 
     #[rstest]
     fn test_update_balance_locked_with_base_currency_multiple_orders() {
-        // Arrange - Create account with USD base currency
+        // Create account with USD base currency
         let usd = Currency::USD();
         let account_state = AccountState::new(
             AccountId::new("SIM-001"),
@@ -931,7 +928,6 @@ mod tests {
 
         let orders: Vec<&OrderAny> = vec![&order1, &order2, &order3];
 
-        // Act
         let result = manager.update_orders(
             &AccountAny::Cash(account),
             InstrumentAny::CurrencyPair(instrument),
@@ -939,7 +935,6 @@ mod tests {
             UnixNanos::default(),
         );
 
-        // Assert
         assert!(result.is_some());
         let (updated_account, _state) = result.unwrap();
 

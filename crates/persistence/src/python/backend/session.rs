@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,8 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use std::collections::HashMap;
 
 use nautilus_core::{
     ffi::cvec::CVec,
@@ -60,7 +62,7 @@ impl DataBackendSession {
     /// to work correctly.
     #[pyo3(name = "add_file")]
     #[pyo3(signature = (data_type, table_name, file_path, sql_query=None))]
-    fn add_file_py(
+    fn py_add_file(
         mut slf: PyRefMut<'_, Self>,
         data_type: NautilusDataType,
         table_name: &str,
@@ -99,11 +101,13 @@ impl DataBackendSession {
     /// Register an object store with the session context from a URI with optional storage options
     #[pyo3(name = "register_object_store_from_uri")]
     #[pyo3(signature = (uri, storage_options=None))]
-    fn register_object_store_from_uri_py(
+    fn py_register_object_store_from_uri(
         mut slf: PyRefMut<'_, Self>,
         uri: &str,
-        storage_options: Option<std::collections::HashMap<String, String>>,
+        storage_options: Option<HashMap<String, String>>,
     ) -> PyResult<()> {
+        // Convert HashMap to AHashMap for internal use
+        let storage_options = storage_options.map(|m| m.into_iter().collect());
         slf.register_object_store_from_uri(uri, storage_options)
             .map_err(to_pyruntime_err)
     }
