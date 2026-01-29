@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,49 +15,44 @@
 
 import pytest
 
-from nautilus_trader.adapters._template.execution import TemplateLiveExecutionClient  # noqa
+from nautilus_trader.adapters._template.execution import TemplateLiveExecutionClient
 from nautilus_trader.live.execution_client import LiveExecutionClient
 
 
-@pytest.mark.skip(reason="example")
-@pytest.fixture()
+pytestmark = pytest.mark.skip(reason="template")
+
+
+@pytest.fixture
 def execution_client() -> LiveExecutionClient:
     return TemplateLiveExecutionClient()  # type: ignore
 
 
-@pytest.mark.skip(reason="example")
 def test_connect(execution_client: LiveExecutionClient):
     execution_client.connect()
     assert execution_client.is_connected
 
 
-@pytest.mark.skip(reason="example")
 def test_disconnect(execution_client: LiveExecutionClient):
     execution_client.connect()
     execution_client.disconnect()
     assert not execution_client.is_connected
 
 
-@pytest.mark.skip(reason="example")
 def test_submit_order(execution_client: LiveExecutionClient):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_submit_bracket_order(execution_client: LiveExecutionClient):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_modify_order(execution_client: LiveExecutionClient):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_cancel_order(execution_client: LiveExecutionClient):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_generate_order_status_report(execution_client: LiveExecutionClient):
     pass

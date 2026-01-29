@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+
 cdef inline Exception make_exception(ex_default, ex_type, str msg):
-    if type(ex_type) == type(Exception):
+    if type(ex_type) is type(Exception):
         return ex_type(msg)
     else:
         return ex_default(msg)
@@ -23,16 +24,16 @@ cdef inline Exception make_exception(ex_default, ex_type, str msg):
 cdef class Condition:
 
     @staticmethod
-    cdef void true(bint predicate, str fail_msg, ex_type=*) except *
+    cdef void is_true(bint predicate, str fail_msg, ex_type=*)
 
     @staticmethod
-    cdef void false(bint predicate, str fail_msg, ex_type=*) except *
+    cdef void is_false(bint predicate, str fail_msg, ex_type=*)
 
     @staticmethod
-    cdef void none(object argument, str param, ex_type=*) except *
+    cdef void none(object argument, str param, ex_type=*)
 
     @staticmethod
-    cdef void not_none(object argument, str param, ex_type=*) except *
+    cdef void not_none(object argument, str param, ex_type=*)
 
     @staticmethod
     cdef void type(
@@ -40,7 +41,7 @@ cdef class Condition:
         object expected,
         str param,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
     cdef void type_or_none(
@@ -48,13 +49,13 @@ cdef class Condition:
         object expected,
         str param,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
-    cdef void callable(object argument, str param, ex_type=*) except *
+    cdef void callable(object argument, str param, ex_type=*)
 
     @staticmethod
-    cdef void callable_or_none(object argument, str param, ex_type=*) except *
+    cdef void callable_or_none(object argument, str param, ex_type=*)
 
     @staticmethod
     cdef void equal(
@@ -63,7 +64,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
     cdef void not_equal(
@@ -72,7 +73,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
     cdef void list_type(
@@ -80,7 +81,7 @@ cdef class Condition:
         type expected_type,
         str param,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
     cdef void dict_types(
@@ -89,7 +90,7 @@ cdef class Condition:
         type value_type,
         str param,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
     cdef void is_in(
@@ -98,7 +99,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
     cdef void not_in(
@@ -107,25 +108,25 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
-    cdef void empty(object collection, str param, ex_type=*) except *
+    cdef void empty(object collection, str param, ex_type=*)
 
     @staticmethod
-    cdef void not_empty(object collection, str param, ex_type=*) except *
+    cdef void not_empty(object collection, str param, ex_type=*)
 
     @staticmethod
-    cdef void positive(double value, str param, ex_type=*) except *
+    cdef void positive(double value, str param, ex_type=*)
 
     @staticmethod
-    cdef void positive_int(int value, str param, ex_type=*) except *
+    cdef void positive_int(value: int, str param, ex_type=*)
 
     @staticmethod
-    cdef void not_negative(double value, str param, ex_type=*) except *
+    cdef void not_negative(double value, str param, ex_type=*)
 
     @staticmethod
-    cdef void not_negative_int(int value, str param, ex_type=*) except *
+    cdef void not_negative_int(value: int, str param, ex_type=*)
 
     @staticmethod
     cdef void in_range(
@@ -134,16 +135,16 @@ cdef class Condition:
         double end,
         str param,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
     cdef void in_range_int(
-        int value,
-        int start,
-        int end,
+        value,
+        start,
+        end,
         str param,
         ex_type=*,
-    ) except *
+    )
 
     @staticmethod
-    cdef void valid_string(str argument, str param, ex_type=*) except *
+    cdef void valid_string(str argument, str param, ex_type=*)

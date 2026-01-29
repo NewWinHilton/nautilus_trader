@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,31 +15,24 @@
 
 import pytest
 
-from nautilus_trader.adapters._template.core import TEMPLATE_VENUE  # noqa
-from nautilus_trader.adapters._template.providers import TemplateInstrumentProvider  # noqa
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.adapters._template.providers import TemplateInstrumentProvider
 
 
-@pytest.fixture(scope="function")
+pytestmark = pytest.mark.skip(reason="template")
+
+
+@pytest.fixture
 def instrument_provider():
-    clock = TestClock()
-    return TemplateInstrumentProvider(
-        venue=TEMPLATE_VENUE,
-        logger=Logger(clock),
-    )
+    return TemplateInstrumentProvider()
 
 
-@pytest.mark.skip(reason="example")
 def test_load_all_async(instrument_provider):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_load_all(instrument_provider):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_load(instrument_provider):
     pass

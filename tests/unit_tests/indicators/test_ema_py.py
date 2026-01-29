@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from examples.indicators.ema_python import PyExponentialMovingAverage
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.examples.indicators.ema_python import PyExponentialMovingAverage
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
@@ -70,27 +70,27 @@ class TestExponentialMovingAverage:
         # Arrange
         indicator = PyExponentialMovingAverage(10, PriceType.MID)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 1.00002
+        assert indicator.value == 1.0
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
         indicator = PyExponentialMovingAverage(10)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 1.00001
+        assert indicator.value == 1.0
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -123,7 +123,7 @@ class TestExponentialMovingAverage:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(1000):
+        for _ in range(1000):
             self.ema.update_raw(1.00000)
 
         # Act

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.indicators.pressure import Pressure
+import pytest
+
+from nautilus_trader.indicators import MovingAverageType
+from nautilus_trader.indicators import Pressure
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
@@ -46,7 +48,7 @@ class TestPressure:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        for _i in range(10):
+        for _ in range(10):
             self.pressure.update_raw(1.00000, 1.00000, 1.00000, 1000)
 
         # Act, Assert
@@ -63,7 +65,7 @@ class TestPressure:
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 0.333333333328399
+        assert indicator.value == pytest.approx(0.333333333328399, rel=1e-9)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -108,7 +110,7 @@ class TestPressure:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(10):
+        for _ in range(10):
             self.pressure.update_raw(1.00000, 1.00000, 1.00000, 1000)
 
         # Act

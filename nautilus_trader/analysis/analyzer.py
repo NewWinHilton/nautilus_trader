@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,7 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 from numpy import float64
@@ -24,19 +24,19 @@ from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.position import Position
 
 
 class PortfolioAnalyzer:
     """
-    Provides a portfolio performance analyzer for tracking and generating
-    performance metrics and statistics.
+    Provides a portfolio performance analyzer for tracking and generating performance
+    metrics and statistics.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._statistics: dict[str, PortfolioStatistic] = {}
 
         # Data
@@ -44,7 +44,7 @@ class PortfolioAnalyzer:
         self._account_balances: dict[Currency, Money] = {}
         self._positions: list[Position] = []
         self._realized_pnls: dict[Currency, pd.Series] = {}
-        self._returns = pd.Series(dtype=float64)
+        self._returns: pd.Series = pd.Series(dtype=float64)
 
     def register_statistic(self, statistic: PortfolioStatistic) -> None:
         """
@@ -63,14 +63,12 @@ class PortfolioAnalyzer:
     def deregister_statistic(self, statistic: PortfolioStatistic) -> None:
         """
         Deregister a statistic from the analyzer.
-
         """
         self._statistics.pop(statistic.name, None)
 
     def deregister_statistics(self) -> None:
         """
         Deregister all statistics from the analyzer.
-
         """
         self._statistics.clear()
 
@@ -79,11 +77,13 @@ class PortfolioAnalyzer:
         Reset the analyzer.
 
         All stateful fields are reset to their initial value.
+
         """
         self._account_balances_starting = {}
         self._account_balances = {}
+        self._positions = []
         self._realized_pnls = {}
-        self._returns = pd.DataFrame(dtype=float64)
+        self._returns = pd.Series(dtype=float64)
 
     def _get_max_length_name(self) -> int:
         max_length = 0
@@ -93,7 +93,7 @@ class PortfolioAnalyzer:
         return max_length
 
     @property
-    def currencies(self):
+    def currencies(self) -> list[Currency]:
         """
         Return the analyzed currencies.
 
@@ -104,7 +104,7 @@ class PortfolioAnalyzer:
         """
         return list(self._account_balances.keys())
 
-    def statistic(self, name: str) -> Optional[PortfolioStatistic]:
+    def statistic(self, name: str) -> PortfolioStatistic | None:
         """
         Return the statistic with the given name (if found).
 
@@ -140,11 +140,12 @@ class PortfolioAnalyzer:
         """
         self._account_balances_starting = account.starting_balances()
         self._account_balances = account.balances_total()
+        self._positions = []
         self._realized_pnls = {}
         self._returns = pd.Series(dtype=float64)
 
         self.add_positions(positions)
-        self._returns.sort_index()
+        self._returns = self._returns.sort_index()
 
     def add_positions(self, positions: list[Position]) -> None:
         """
@@ -157,9 +158,15 @@ class PortfolioAnalyzer:
 
         """
         self._positions += positions
+
         for position in positions:
+            if position.realized_pnl is None:
+                continue  # Skip empty shell positions
+
             self.add_trade(position.id, position.realized_pnl)
-            self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
+
+            if position.ts_closed > 0:
+                self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
 
     def add_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
         """
@@ -194,7 +201,7 @@ class PortfolioAnalyzer:
             self._returns.loc[timestamp] = 0.0
         self._returns.loc[timestamp] += float(value)
 
-    def realized_pnls(self, currency: Currency = None) -> Optional[pd.Series]:
+    def realized_pnls(self, currency: Currency | None = None) -> pd.Series | None:
         """
         Return the realized PnL for the portfolio.
 
@@ -218,14 +225,17 @@ class PortfolioAnalyzer:
         if not self._realized_pnls:
             return None
         if currency is None:
-            assert (
-                len(self._account_balances) == 1
-            ), "currency was None for multi-currency portfolio"
+            if len(self._account_balances) > 1:
+                raise ValueError("`currency` was `None` for multi-currency portfolio")
             currency = next(iter(self._account_balances.keys()))
 
         return self._realized_pnls.get(currency)
 
-    def total_pnl(self, currency: Currency = None) -> float:
+    def total_pnl(
+        self,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
+    ) -> float:
         """
         Return the total PnL for the portfolio.
 
@@ -235,6 +245,8 @@ class PortfolioAnalyzer:
         ----------
         currency : Currency, optional
             The currency for the result.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the given currency.
 
         Returns
         -------
@@ -246,16 +258,20 @@ class PortfolioAnalyzer:
             If `currency` is ``None`` when analyzing multi-currency portfolios.
         ValueError
             If `currency` is not contained in the tracked account balances.
+        ValueError
+            If `unrealized_pnl` is not ``None`` and currency is not equal to the given currency.
 
         """
         if not self._account_balances:
             return 0.0
+
         if currency is None:
-            assert (
-                len(self._account_balances) == 1
-            ), "currency was None for multi-currency portfolio"
+            if len(self._account_balances) > 1:
+                raise ValueError("`currency` was `None` for multi-currency portfolio")
             currency = next(iter(self._account_balances.keys()))
-        assert currency in self._account_balances, "currency not found in account_balances"
+
+        if unrealized_pnl is not None and unrealized_pnl.currency != currency:
+            raise ValueError(f"unrealized PnL currency is not {currency}")
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
@@ -263,9 +279,14 @@ class PortfolioAnalyzer:
         if account_balance is None:
             return 0.0
 
-        return float(account_balance - account_balance_starting)
+        unrealized_pnl_f64 = 0.0 if unrealized_pnl is None else unrealized_pnl.as_double()
+        return float(account_balance - account_balance_starting) + unrealized_pnl_f64
 
-    def total_pnl_percentage(self, currency: Currency = None) -> float:
+    def total_pnl_percentage(
+        self,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
+    ) -> float:
         """
         Return the percentage change of the total PnL for the portfolio.
 
@@ -275,6 +296,8 @@ class PortfolioAnalyzer:
         ----------
         currency : Currency, optional
             The currency for the result.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the given currency.
 
         Returns
         -------
@@ -286,16 +309,20 @@ class PortfolioAnalyzer:
             If `currency` is ``None`` when analyzing multi-currency portfolios.
         ValueError
             If `currency` is not contained in the tracked account balances.
+        ValueError
+            If `unrealized_pnl` is not ``None`` and currency is not equal to the given currency.
 
         """
         if not self._account_balances:
             return 0.0
+
         if currency is None:
-            assert (
-                len(self._account_balances) == 1
-            ), "currency was None for multi-currency portfolio"
+            if len(self._account_balances) != 1:
+                raise ValueError("currency was None for multi-currency portfolio")
             currency = next(iter(self._account_balances.keys()))
-        assert currency in self._account_balances, "currency not in account_balances"
+
+        if unrealized_pnl is not None and unrealized_pnl.currency != currency:
+            raise ValueError(f"unrealized PnL currency is not {currency}")
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
@@ -307,15 +334,23 @@ class PortfolioAnalyzer:
             # Protect divide by zero
             return 0.0
 
-        current = account_balance
+        unrealized_pnl_f64 = 0.0 if unrealized_pnl is None else unrealized_pnl.as_double()
+
+        # Calculate percentage
+        current = account_balance + unrealized_pnl_f64
         starting = account_balance_starting
         difference = current - starting
 
         return float((difference / starting) * 100)
 
-    def get_performance_stats_pnls(self, currency: Currency = None) -> dict[str, float]:
+    def get_performance_stats_pnls(
+        self,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
+    ) -> dict[str, float]:
         """
-        Return the `PnL` performance statistics.
+        Return the 'PnL' (profit and loss) performance statistics, optionally includes
+        the unrealized PnL.
 
         Money objects are converted to floats.
 
@@ -323,6 +358,8 @@ class PortfolioAnalyzer:
         ----------
         currency : Currency
             The currency for the performance.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the performance.
 
         Returns
         -------
@@ -331,16 +368,26 @@ class PortfolioAnalyzer:
         """
         realized_pnls = self.realized_pnls(currency)
 
-        output = {
-            "PnL": self.total_pnl(currency),
-            "PnL%": self.total_pnl_percentage(currency),
+        output: dict[str, Any] = {
+            "PnL (total)": self.total_pnl(currency, unrealized_pnl),
+            "PnL% (total)": self.total_pnl_percentage(currency, unrealized_pnl),
         }
 
         for name, stat in self._statistics.items():
-            value = stat.calculate_from_realized_pnls(realized_pnls)
+            # Check if this is a Rust statistic (requires list) or Python statistic (expects Series)
+            is_rust_stat = type(stat).__module__.startswith("nautilus_trader.core.nautilus_pyo3")
+
+            if is_rust_stat:
+                # Convert pandas Series to list for Rust statistics
+                pnls_list = realized_pnls.tolist() if realized_pnls is not None else []
+                value = stat.calculate_from_realized_pnls(pnls_list)
+            else:
+                # Pass Series directly for Python statistics (backward compatibility)
+                value = stat.calculate_from_realized_pnls(realized_pnls)
+
             if value is None:
                 continue  # Not implemented
-            if not isinstance(value, (int, float, str, bool)):
+            if not isinstance(value, int | float | str | bool):
                 value = str(value)
             output[name] = value
 
@@ -356,11 +403,27 @@ class PortfolioAnalyzer:
 
         """
         output = {}
+
         for name, stat in self._statistics.items():
-            value = stat.calculate_from_returns(self._returns)
+            # Check if this is a Rust statistic (requires dict) or Python statistic (expects Series)
+            is_rust_stat = type(stat).__module__.startswith("nautilus_trader.core.nautilus_pyo3")
+
+            if is_rust_stat:
+                # Convert pandas Series with datetime index to dict with unix timestamps for Rust statistics
+                returns_dict = {}
+                if not self._returns.empty:
+                    for timestamp, value in self._returns.items():
+                        # Convert datetime to unix nanoseconds (use .value to avoid float precision loss)
+                        unix_nanos = timestamp.value
+                        returns_dict[unix_nanos] = float(value)
+                value = stat.calculate_from_returns(returns_dict)
+            else:
+                # Pass Series directly for Python statistics (backward compatibility)
+                value = stat.calculate_from_returns(self._returns)
+
             if value is None:
                 continue  # Not implemented
-            if not isinstance(value, (int, float, str, bool)):
+            if not isinstance(value, int | float | str | bool):
                 value = str(value)
             output[name] = value
 
@@ -378,24 +441,32 @@ class PortfolioAnalyzer:
         output = {}
 
         for name, stat in self._statistics.items():
+            # Positions are passed as-is to both Rust and Python statistics
+            # (list[Position] works for both)
             value = stat.calculate_from_positions(self._positions)
             if value is None:
                 continue  # Not implemented
-            if not isinstance(value, (int, float, str, bool)):
+            if not isinstance(value, int | float | str | bool):
                 value = str(value)
             output[name] = value
 
         return output
 
-    def get_stats_pnls_formatted(self, currency: Currency = None) -> list[str]:
+    def get_stats_pnls_formatted(
+        self,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
+    ) -> list[str]:
         """
-        Return the performance statistics from the last backtest run formatted
-        for printing in the backtest run footer.
+        Return the performance statistics from the last backtest run formatted for
+        printing in the backtest run footer.
 
         Parameters
         ----------
         currency : Currency
             The currency for the performance.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the performance.
 
         Returns
         -------
@@ -403,7 +474,7 @@ class PortfolioAnalyzer:
 
         """
         max_length: int = self._get_max_length_name()
-        stats = self.get_performance_stats_pnls(currency)
+        stats = self.get_performance_stats_pnls(currency, unrealized_pnl)
 
         output = []
         for k, v in stats.items():
@@ -448,10 +519,7 @@ class PortfolioAnalyzer:
         output = []
         for k, v in stats.items():
             padding = max_length - len(k) + 1
-            if isinstance(v, (int, float, Decimal)):
-                v_formatted = f"{v:_}"
-            else:
-                v_formatted = str(v)
+            v_formatted = f"{v:_}" if isinstance(v, int | float | Decimal) else str(v)
             output.append(f"{k}: {' ' * padding}{v_formatted}")
 
         return output

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,99 +13,185 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
-from typing import Optional
-
-import msgspec
+from typing import Any
 
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TimeInForce
+from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.core.rust.model cimport order_accepted_new
+from nautilus_trader.core.rust.model cimport order_denied_new
+from nautilus_trader.core.rust.model cimport order_emulated_new
+from nautilus_trader.core.rust.model cimport order_rejected_new
+from nautilus_trader.core.rust.model cimport order_released_new
+from nautilus_trader.core.rust.model cimport order_submitted_new
+from nautilus_trader.core.rust.model cimport strategy_id_new
+from nautilus_trader.core.rust.model cimport trader_id_new
+from nautilus_trader.core.string cimport cstr_to_pybytes
+from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport LiquiditySide
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport TimeInForce
-from nautilus_trader.model.enums_c cimport TriggerType
-from nautilus_trader.model.enums_c cimport contingency_type_from_str
-from nautilus_trader.model.enums_c cimport contingency_type_to_str
-from nautilus_trader.model.enums_c cimport liquidity_side_from_str
-from nautilus_trader.model.enums_c cimport liquidity_side_to_str
-from nautilus_trader.model.enums_c cimport order_side_from_str
-from nautilus_trader.model.enums_c cimport order_side_to_str
-from nautilus_trader.model.enums_c cimport order_type_from_str
-from nautilus_trader.model.enums_c cimport order_type_to_str
-from nautilus_trader.model.enums_c cimport time_in_force_from_str
-from nautilus_trader.model.enums_c cimport time_in_force_to_str
-from nautilus_trader.model.enums_c cimport trigger_type_from_str
-from nautilus_trader.model.enums_c cimport trigger_type_to_str
+from nautilus_trader.model.functions cimport contingency_type_from_str
+from nautilus_trader.model.functions cimport contingency_type_to_str
+from nautilus_trader.model.functions cimport liquidity_side_from_str
+from nautilus_trader.model.functions cimport liquidity_side_to_str
+from nautilus_trader.model.functions cimport order_side_from_str
+from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.functions cimport order_type_from_str
+from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport time_in_force_from_str
+from nautilus_trader.model.functions cimport time_in_force_to_str
+from nautilus_trader.model.functions cimport trigger_type_from_str
+from nautilus_trader.model.functions cimport trigger_type_to_str
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class OrderEvent(Event):
     """
-    The base class for all order events.
-
-    Parameters
-    ----------
-    trader_id : TraderId
-        The trader ID.
-    strategy_id : StrategyId
-        The strategy ID.
-    instrument_id : InstrumentId
-        The instrument ID.
-    client_order_id : ClientOrderId
-        The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
-        The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
-        The account ID (with the venue).
-    event_id : UUID4
-        The event ID.
-    ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order event occurred.
-    ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
-    reconciliation : bool
-        If the event was generated during reconciliation.
+    The abstract base class for all order events.
 
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(
-        self,
-        TraderId trader_id not None,
-        StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
-        ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
-        UUID4 event_id not None,
-        uint64_t ts_event,
-        uint64_t ts_init,
-        bint reconciliation,
-    ):
-        super().__init__(event_id, ts_event, ts_init)
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
 
-        self.trader_id = trader_id
-        self.strategy_id = strategy_id
-        self.instrument_id = instrument_id
-        self.client_order_id = client_order_id
-        self.venue_order_id = venue_order_id
-        self.account_id = account_id
-        self.reconciliation = reconciliation
+        Returns
+        -------
+        TraderId
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        raise NotImplementedError("abstract method `set_client_order_i` must be implemented")
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -139,26 +225,38 @@ cdef class OrderInitialized(OrderEvent):
         If the order will only provide liquidity (make a market).
     reduce_only : bool
         If the order carries the 'reduce-only' execution instruction.
+    quote_quantity : bool
+        If the order quantity is denominated in the quote currency.
     options : dict[str, str]
         The order initialization options. Contains mappings for specific
         order parameters.
-    emulation_trigger : EmulationTrigger
-        The emulation trigger for the order.
+    emulation_trigger : TriggerType, default ``NO_TRIGGER``
+        The type of market price trigger to use for local order emulation.
+        - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+        - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+        Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
+    trigger_instrument_id : InstrumentId or ``None``
+        The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
     contingency_type : ContingencyType
         The order contingency type.
-    order_list_id : OrderListId, optional with no default so ``None`` must be passed explicitly
+    order_list_id : OrderListId or ``None``
         The order list ID associated with the order.
-    linked_order_ids : list[ClientOrderId], optional with no default so ``None`` must be passed explicitly
+    linked_order_ids : list[ClientOrderId] or ``None``
         The order linked client order ID(s).
-    parent_order_id : ClientOrderId, optional with no default so ``None`` must be passed explicitly
+    parent_order_id : ClientOrderId or ``None``
         The orders parent client order ID.
-    tags : str, optional with no default so ``None`` must be passed explicitly
-        The custom user tags for the order. These are optional and can
-        contain any arbitrary delimiter if required.
+    exec_algorithm_id : ExecAlgorithmId or ``None``
+        The execution algorithm ID for the order.
+    exec_algorithm_params : dict[str, Any], optional
+        The execution algorithm parameters for the order.
+    exec_spawn_id : ClientOrderId or ``None``
+        The execution algorithm spawning primary client order ID.
+    tags : list[str] or ``None``
+        The custom user tags for the order.
     event_id : UUID4
         The event ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
@@ -166,6 +264,10 @@ cdef class OrderInitialized(OrderEvent):
     ------
     ValueError
         If `order_side` is ``NO_ORDER_SIDE``.
+    ValueError
+        If `contingency_type` is not ``NO_CONTINGENCY``, and `linked_order_ids` is ``None`` or empty.
+    ValueError
+        If `exec_algorithm_id` is not ``None``, and `exec_spawn_id` is ``None``.
     """
 
     def __init__(
@@ -180,31 +282,36 @@ cdef class OrderInitialized(OrderEvent):
         TimeInForce time_in_force,
         bint post_only,
         bint reduce_only,
-        dict options not None,
+        bint quote_quantity,
+        dict[str, object] options not None,
         TriggerType emulation_trigger,
+        InstrumentId trigger_instrument_id: InstrumentId | None,
         ContingencyType contingency_type,
-        OrderListId order_list_id: Optional[OrderListId],
-        list linked_order_ids: Optional[list[ClientOrderId]],
-        ClientOrderId parent_order_id: Optional[ClientOrderId],
-        str tags: Optional[str],
+        OrderListId order_list_id: OrderListId | None,
+        list[ClientOrderId] linked_order_ids: list[ClientOrderId] | None,
+        ClientOrderId parent_order_id: ClientOrderId | None,
+        ExecAlgorithmId exec_algorithm_id: ExecAlgorithmId | None,
+        dict[str, object] exec_algorithm_params: dict[str, object] | None,
+        ClientOrderId exec_spawn_id: ClientOrderId | None,
+        list[str] tags: list[str] | None,
         UUID4 event_id not None,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
+        if contingency_type != ContingencyType.NO_CONTINGENCY:
+            Condition.is_true(linked_order_ids, f"`linked_order_ids` was `None` or empty when `contingency_type` {contingency_type_to_str(contingency_type)}")
+        if exec_algorithm_id is not None:
+            Condition.not_none(exec_spawn_id, "exec_spawn_id")
 
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            None,  # Pending assignment by venue
-            None,  # Pending assignment by system
-            event_id,
-            ts_init,  # Timestamp identical to ts_init
-            ts_init,
-            reconciliation,
-        )
+        self._trader_id = trader_id
+        self._strategy_id = strategy_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._event_id = event_id
+        self._ts_event = ts_init  # Timestamp identical to ts_init
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
 
         self.side = order_side
         self.order_type = order_type
@@ -212,35 +319,53 @@ cdef class OrderInitialized(OrderEvent):
         self.time_in_force = time_in_force
         self.post_only = post_only
         self.reduce_only = reduce_only
+        self.quote_quantity = quote_quantity
         self.options = options
         self.emulation_trigger = emulation_trigger
+        self.trigger_instrument_id = trigger_instrument_id
         self.contingency_type = contingency_type
         self.order_list_id = order_list_id
         self.linked_order_ids = linked_order_ids
         self.parent_order_id = parent_order_id
+        self.exec_algorithm_id = exec_algorithm_id
+        self.exec_algorithm_params = exec_algorithm_params
+        self.exec_spawn_id = exec_spawn_id
         self.tags = tags
+
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         cdef ClientOrderId o
         cdef str linked_order_ids = "None"
         if self.linked_order_ids:
-            linked_order_ids = str([o.to_str() for o in self.linked_order_ids])
+            linked_order_ids = str([o.value for o in self.linked_order_ids])
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
+            f"instrument_id={self.instrument_id}, "
             f"client_order_id={self.client_order_id}, "
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_formatted_str()}, "
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
+            f"quote_quantity={self.quote_quantity}, "
             f"options={self.options}, "
             f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
+            f"trigger_instrument_id={self.trigger_instrument_id}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
-            f"order_list_id={self.order_list_id}, "  # Can be None
+            f"order_list_id={self.order_list_id}, "
             f"linked_order_ids={linked_order_ids}, "
             f"parent_order_id={self.parent_order_id}, "
+            f"exec_algorithm_id={self.exec_algorithm_id}, "
+            f"exec_algorithm_params={self.exec_algorithm_params}, "
+            f"exec_spawn_id={self.exec_spawn_id}, "
             f"tags={self.tags})"
         )
 
@@ -248,36 +373,175 @@ cdef class OrderInitialized(OrderEvent):
         cdef ClientOrderId o
         cdef str linked_order_ids = "None"
         if self.linked_order_ids:
-            linked_order_ids = str([o.to_str() for o in self.linked_order_ids])
+            linked_order_ids = str([o.value for o in self.linked_order_ids])
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_formatted_str()}, "
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
+            f"quote_quantity={self.quote_quantity}, "
             f"options={self.options}, "
             f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
+            f"trigger_instrument_id={self.trigger_instrument_id}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
-            f"order_list_id={self.order_list_id}, "  # Can be None
+            f"order_list_id={self.order_list_id}, "
             f"linked_order_ids={linked_order_ids}, "
             f"parent_order_id={self.parent_order_id}, "
+            f"exec_algorithm_id={self.exec_algorithm_id}, "
+            f"exec_algorithm_params={self.exec_algorithm_params}, "
+            f"exec_spawn_id={self.exec_spawn_id}, "
             f"tags={self.tags}, "
-            f"event_id={self.id.to_str()}, "
+            f"event_id={self.id}, "
             f"ts_init={self.ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return None  # Pending assignment by venue
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return None  # Pending assignment by system
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return False  # Internal system event
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
 
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str trigger_instrument_id = values["trigger_instrument_id"]
         cdef str order_list_id_str = values["order_list_id"]
-        cdef str linked_order_ids_str = values["linked_order_ids"]
         cdef str parent_order_id_str = values["parent_order_id"]
+        cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
+        cdef str exec_spawn_id_str = values["exec_spawn_id"]
+
+        linked_order_ids = values.get("linked_order_ids")
+        tags = values.get("tags")
+
+        if isinstance(linked_order_ids, str):
+            linked_order_ids = linked_order_ids.split(",")
+        if isinstance(tags, str):
+            tags = tags.split(",")
+
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -289,14 +553,19 @@ cdef class OrderInitialized(OrderEvent):
             time_in_force=time_in_force_from_str(values["time_in_force"]),
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
-            options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
-            emulation_trigger=trigger_type_from_str(values["emulation_trigger"]),
+            quote_quantity=values["quote_quantity"],
+            options=values["options"],
+            emulation_trigger=trigger_type_from_str(values["emulation_trigger"]) if values["emulation_trigger"] is not None else TriggerType.NO_TRIGGER,
+            trigger_instrument_id=InstrumentId.from_str_c(trigger_instrument_id) if trigger_instrument_id is not None else None,
             contingency_type=contingency_type_from_str(values["contingency_type"]),
-            order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
-            linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
-            parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str else None,
-            tags=values["tags"],
-            event_id=UUID4(values["event_id"]),
+            order_list_id=OrderListId(order_list_id_str) if order_list_id_str is not None else None,
+            linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids] if linked_order_ids is not None else None,
+            parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str is not None else None,
+            exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
+            exec_algorithm_params=values["exec_algorithm_params"],
+            exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
+            tags=tags,
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
         )
@@ -307,25 +576,31 @@ cdef class OrderInitialized(OrderEvent):
         cdef ClientOrderId o
         return {
             "type": "OrderInitialized",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
             "order_side": order_side_to_str(obj.side),
             "order_type": order_type_to_str(obj.order_type),
             "quantity": str(obj.quantity),
             "time_in_force": time_in_force_to_str(obj.time_in_force),
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
-            "options": json.dumps(obj.options),  # Using vanilla json due mixed schema types
+            "quote_quantity": obj.quote_quantity,
+            "options": obj.options,
             "emulation_trigger": trigger_type_to_str(obj.emulation_trigger),
+            "trigger_instrument_id": obj.trigger_instrument_id.value if obj.trigger_instrument_id is not None else None,
             "contingency_type": contingency_type_to_str(obj.contingency_type),
-            "order_list_id": obj.order_list_id.to_str() if obj.order_list_id is not None else None,
-            "linked_order_ids": ",".join([o.to_str() for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
-            "parent_order_id": obj.parent_order_id.to_str() if obj.parent_order_id is not None else None,
-            "tags": obj.tags,
-            "event_id": obj.id.to_str(),
+            "order_list_id": obj.order_list_id.value if obj.order_list_id is not None else None,
+            "linked_order_ids": [o.value for o in obj.linked_order_ids] if obj.linked_order_ids is not None else None,
+            "parent_order_id": obj.parent_order_id.value if obj.parent_order_id is not None else None,
+            "exec_algorithm_id": obj.exec_algorithm_id.value if obj.exec_algorithm_id is not None else None,
+            "exec_algorithm_params": obj.exec_algorithm_params,
+            "exec_spawn_id": obj.exec_spawn_id.value if obj.exec_spawn_id is not None else None,
+            "tags": obj.tags if obj.tags is not None else None,
+            "event_id": obj.id.value,
             "ts_init": obj.ts_init,
+            "ts_event": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -381,12 +656,8 @@ cdef class OrderDenied(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
-    Raises
-    ------
-    ValueError
-        If `denied_reason` is not a valid_string.
     """
 
     def __init__(
@@ -395,45 +666,183 @@ cdef class OrderDenied(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        str reason not None,
+        str reason,
         UUID4 event_id not None,
         uint64_t ts_init,
     ):
-        Condition.valid_string(reason, "denied_reason")
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            None,  # Never assigned
-            None,  # Never assigned
-            event_id,
-            ts_init,  # Timestamp identical to ts_init
+        self._mem = order_denied_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            pystr_to_cstr(reason or str(None)),
+            event_id._mem,
             ts_init,
-            reconciliation=False,  # Internal system event
+            ts_init,
         )
 
-        self.reason = reason
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"reason={self.reason})"
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"reason='{self.reason}')"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"reason={self.reason}, "
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"reason='{self.reason}', "
+            f"event_id={self.id}, "
             f"ts_init={self.ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId.from_mem_c(self._mem.trader_id)
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return StrategyId.from_mem_c(self._mem.strategy_id)
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return None  # No assignment from venue
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return None  # No assignment
+
+    @property
+    def reason(self) -> str:
+        """
+        Return the reason the order was denied.
+
+        Returns
+        -------
+        str
+
+        """
+        return ustr_to_pystr(self._mem.reason)
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return False  # Internal system event
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_mem_c(self._mem.event_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
 
     @staticmethod
     cdef OrderDenied from_dict_c(dict values):
@@ -444,7 +853,7 @@ cdef class OrderDenied(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             reason=values["reason"],
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -453,12 +862,13 @@ cdef class OrderDenied(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderDenied",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
             "reason": obj.reason,
-            "event_id": obj.id.to_str(),
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
 
@@ -492,6 +902,516 @@ cdef class OrderDenied(OrderEvent):
         return OrderDenied.to_dict_c(obj)
 
 
+cdef class OrderEmulated(OrderEvent):
+    """
+    Represents an event where an order has become emulated by the Nautilus system.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID.
+    strategy_id : StrategyId
+        The strategy ID.
+    instrument_id : InstrumentId
+        The instrument ID.
+    client_order_id : ClientOrderId
+        The client order ID.
+    event_id : UUID4
+        The event ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        ClientOrderId client_order_id not None,
+        UUID4 event_id not None,
+        uint64_t ts_init,
+    ):
+        self._mem = order_emulated_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            event_id._mem,
+            ts_init,
+            ts_init,
+        )
+
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"event_id={self.id}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId.from_mem_c(self._mem.trader_id)
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return StrategyId.from_mem_c(self._mem.strategy_id)
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return None  # No assignment from venue
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return None  # No assignment
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return False  # Internal system event
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_mem_c(self._mem.event_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
+
+    @staticmethod
+    cdef OrderEmulated from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return OrderEmulated(
+            trader_id=TraderId(values["trader_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(OrderEmulated obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "OrderEmulated",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_init,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> OrderEmulated:
+        """
+        Return an order emulated event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderEmulated
+
+        """
+        return OrderEmulated.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(OrderEmulated obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return OrderEmulated.to_dict_c(obj)
+
+
+cdef class OrderReleased(OrderEvent):
+    """
+    Represents an event where an order was released from the `OrderEmulator` by the Nautilus system.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID.
+    strategy_id : StrategyId
+        The strategy ID.
+    instrument_id : InstrumentId
+        The instrument ID.
+    client_order_id : ClientOrderId
+        The client order ID.
+    released_price : Price
+        The price which released the order from the emulator.
+    event_id : UUID4
+        The event ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        ClientOrderId client_order_id not None,
+        Price released_price not None,
+        UUID4 event_id not None,
+        uint64_t ts_init,
+    ):
+        self._mem = order_released_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            released_price._mem,
+            event_id._mem,
+            ts_init,
+            ts_init,
+        )
+
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"released_price={self.released_price})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"released_price={self.released_price}, "
+            f"event_id={self.id}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId.from_mem_c(self._mem.trader_id)
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return StrategyId.from_mem_c(self._mem.strategy_id)
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return None  # No assignment from venue
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return None  # No assignment
+
+    @property
+    def released_price(self) -> Price:
+        """
+        The released price for the event.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price.from_mem_c(self._mem.released_price)
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return False  # Internal system event
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_mem_c(self._mem.event_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
+
+    @staticmethod
+    cdef OrderReleased from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return OrderReleased(
+            trader_id=TraderId(values["trader_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            released_price=Price.from_str_c(values["released_price"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(OrderReleased obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "OrderReleased",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "released_price": str(obj.released_price),
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_init,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> OrderReleased:
+        """
+        Return an order released event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderReleased
+
+        """
+        return OrderReleased.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(OrderReleased obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return OrderReleased.to_dict_c(obj)
+
+
 cdef class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted by the system to the
@@ -512,9 +1432,9 @@ cdef class OrderSubmitted(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order submitted event occurred.
+        UNIX timestamp (nanoseconds) when the order submitted event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -528,42 +1448,169 @@ cdef class OrderSubmitted(OrderEvent):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            None,  # Pending accepted
-            account_id,
-            event_id,
+        self._mem = order_submitted_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            account_id._mem,
+            event_id._mem,
             ts_event,
             ts_init,
-            reconciliation=False,  # Internal system event
         )
 
-        self.account_id = account_id
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"account_id={self.account_id}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"account_id={self.account_id.to_str()}, "
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"account_id={self.account_id}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId.from_mem_c(self._mem.trader_id)
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return StrategyId.from_mem_c(self._mem.strategy_id)
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return None  # Pending assignment by venue
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return AccountId.from_mem_c(self._mem.account_id)
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return False  # Internal system event
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_mem_c(self._mem.event_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
 
     @staticmethod
     cdef OrderSubmitted from_dict_c(dict values):
@@ -574,7 +1621,7 @@ cdef class OrderSubmitted(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             account_id=AccountId(values["account_id"]),
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -584,12 +1631,12 @@ cdef class OrderSubmitted(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderSubmitted",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "account_id": obj.account_id.to_str(),
-            "event_id": obj.id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "account_id": obj.account_id.value,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -628,8 +1675,7 @@ cdef class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the trading venue.
 
-    This event often corresponds to a `NEW` OrdStatus <39> field in FIX
-    trade reports.
+    This event often corresponds to a `NEW` OrdStatus <39> field in FIX execution reports.
 
     Parameters
     ----------
@@ -648,9 +1694,9 @@ cdef class OrderAccepted(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order accepted event occurred.
+        UNIX timestamp (nanoseconds) when the order accepted event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
@@ -672,42 +1718,173 @@ cdef class OrderAccepted(OrderEvent):
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
+        self._mem = order_accepted_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            venue_order_id._mem,
+            account_id._mem,
+            event_id._mem,
             ts_event,
             ts_init,
             reconciliation,
         )
 
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id.to_str()}, "
-            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id.to_str()}, "
-            f"account_id={self.account_id.to_str()}, "
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId.from_mem_c(self._mem.trader_id)
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return StrategyId.from_mem_c(self._mem.strategy_id)
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return VenueOrderId.from_mem_c(self._mem.venue_order_id)
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return AccountId.from_mem_c(self._mem.account_id)
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>self._mem.reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_mem_c(self._mem.event_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
 
     @staticmethod
     cdef OrderAccepted from_dict_c(dict values):
@@ -719,7 +1896,7 @@ cdef class OrderAccepted(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             account_id=AccountId(values["account_id"]),
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -730,13 +1907,13 @@ cdef class OrderAccepted(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderAccepted",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str(),
-            "account_id": obj.account_id.to_str(),
-            "event_id": obj.id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "account_id": obj.account_id.value,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -788,21 +1965,19 @@ cdef class OrderRejected(OrderEvent):
         The client order ID.
     account_id : AccountId
         The account ID (with the venue).
-    reason : datetime
+    reason : str
         The order rejected reason.
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order rejected event occurred.
+        UNIX timestamp (nanoseconds) when the order rejected event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
+    due_post_only : bool, default False
+        If the order was rejected because it was post-only and would execute immediately as a taker.
 
-    Raises
-    ------
-    ValueError
-        If `reason` is not a valid string.
     """
 
     def __init__(
@@ -812,51 +1987,207 @@ cdef class OrderRejected(OrderEvent):
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         AccountId account_id not None,
-        str reason not None,
+        str reason,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
+        bint due_post_only=False,
     ):
-        Condition.valid_string(reason, "reason")
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            None,  # Not always assigned on rejection
-            account_id,  # We know the account with the venue
-            event_id,
+        self._mem = order_rejected_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            account_id._mem,
+            pystr_to_cstr(reason or "None"),
+            event_id._mem,
             ts_event,
             ts_init,
             reconciliation,
+            due_post_only,
         )
 
-        self.reason = reason
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"account_id={self.account_id}, "
             f"reason='{self.reason}', "
+            f"due_post_only={self.due_post_only}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"account_id={self.account_id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"account_id={self.account_id}, "
             f"reason='{self.reason}', "
-            f"event_id={self.id.to_str()}, "
+            f"due_post_only={self.due_post_only}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId.from_mem_c(self._mem.trader_id)
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return StrategyId.from_mem_c(self._mem.strategy_id)
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return None  # Not assigned
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return AccountId.from_mem_c(self._mem.account_id)
+
+    @property
+    def reason(self) -> str:
+        """
+        Return the reason the order was rejected.
+
+        Returns
+        -------
+        str
+
+        """
+        return ustr_to_pystr(self._mem.reason)
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>self._mem.reconciliation
+
+    @property
+    def due_post_only(self) -> bool:
+        """
+        If the order was rejected because it was post-only and would execute immediately as a taker.
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>self._mem.due_post_only
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_mem_c(self._mem.event_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
 
     @staticmethod
     cdef OrderRejected from_dict_c(dict values):
@@ -868,10 +2199,11 @@ cdef class OrderRejected(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             account_id=AccountId(values["account_id"]),
             reason=values["reason"],
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
+            due_post_only=values.get("due_post_only", False),
         )
 
     @staticmethod
@@ -879,16 +2211,17 @@ cdef class OrderRejected(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderRejected",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "account_id": obj.account_id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "account_id": obj.account_id.value,
             "reason": obj.reason,
-            "event_id": obj.id.to_str(),
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
+            "due_post_only": obj.due_post_only,
         }
 
     @staticmethod
@@ -935,16 +2268,16 @@ cdef class OrderCanceled(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when order canceled event occurred.
+        UNIX timestamp (nanoseconds) when order canceled event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -955,55 +2288,184 @@ cdef class OrderCanceled(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-        )
+        self._trader_id = trader_id
+        self._strategy_id = strategy_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._venue_order_id = venue_order_id
+        self._account_id = account_id
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
+
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return self._venue_order_id
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return self._account_id
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
     @staticmethod
     cdef OrderCanceled from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderCanceled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -1011,7 +2473,7 @@ cdef class OrderCanceled(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
             account_id=AccountId(a) if a is not None else None,
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -1022,13 +2484,13 @@ cdef class OrderCanceled(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderCanceled",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
-            "event_id": obj.id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "account_id": obj.account_id.value if obj.account_id is not None else None,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1078,16 +2540,16 @@ cdef class OrderExpired(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order expired event occurred.
+        UNIX timestamp (nanoseconds) when the order expired event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -1098,55 +2560,184 @@ cdef class OrderExpired(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-        )
+        self._trader_id = trader_id
+        self._strategy_id = strategy_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._venue_order_id = venue_order_id
+        self._account_id = account_id
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
+
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return self._venue_order_id
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return self._account_id
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
     @staticmethod
     cdef OrderExpired from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderExpired(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -1154,7 +2745,7 @@ cdef class OrderExpired(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
             account_id=AccountId(a) if a is not None else None,
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -1165,13 +2756,13 @@ cdef class OrderExpired(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderExpired",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
-            "event_id": obj.id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "account_id": obj.account_id.value if obj.account_id is not None else None,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1223,16 +2814,16 @@ cdef class OrderTriggered(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order triggered event occurred.
+        UNIX timestamp (nanoseconds) when the order triggered event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -1243,57 +2834,184 @@ cdef class OrderTriggered(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-        )
+        self._trader_id = trader_id
+        self._strategy_id = strategy_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._venue_order_id = venue_order_id
+        self._account_id = account_id
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
 
-        self.account_id = account_id
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return self._venue_order_id
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return self._account_id
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
     @staticmethod
     cdef OrderTriggered from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderTriggered(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -1301,7 +3019,7 @@ cdef class OrderTriggered(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
             account_id=AccountId(a) if a is not None else None,
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -1312,13 +3030,13 @@ cdef class OrderTriggered(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderTriggered",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
-            "event_id": obj.id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "account_id": obj.account_id.value if obj.account_id is not None else None,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1369,16 +3087,16 @@ cdef class OrderPendingUpdate(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order pending update event occurred.
+        UNIX timestamp (nanoseconds) when the order pending update event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -1389,62 +3107,192 @@ cdef class OrderPendingUpdate(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id not None,
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-        )
+        self._trader_id = trader_id
+        self._strategy_id = strategy_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._venue_order_id = venue_order_id
+        self._account_id = account_id
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
+
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id.to_str()}, "
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return self._venue_order_id
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return self._account_id
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
     @staticmethod
     cdef OrderPendingUpdate from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderPendingUpdate(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
-            account_id=AccountId(values["account_id"]),
-            event_id=UUID4(values["event_id"]),
+            account_id=AccountId(a) if a is not None else None,
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -1455,13 +3303,13 @@ cdef class OrderPendingUpdate(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderPendingUpdate",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str(),
-            "event_id": obj.id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "account_id": obj.account_id.value if obj.account_id is not None else None,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1512,16 +3360,16 @@ cdef class OrderPendingCancel(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
+        UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -1532,62 +3380,192 @@ cdef class OrderPendingCancel(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id not None,
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-        )
+        self._trader_id = trader_id
+        self._strategy_id = strategy_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._venue_order_id = venue_order_id
+        self._account_id = account_id
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
+
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id.to_str()}, "
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return self._venue_order_id
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return self._account_id
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
     @staticmethod
     cdef OrderPendingCancel from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderPendingCancel(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
-            account_id=AccountId(values["account_id"]),
-            event_id=UUID4(values["event_id"]),
+            account_id=AccountId(a) if a is not None else None,
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -1598,13 +3576,13 @@ cdef class OrderPendingCancel(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderPendingCancel",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str(),
-            "event_id": obj.id.to_str(),
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "account_id": obj.account_id.value if obj.account_id is not None else None,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1655,25 +3633,21 @@ cdef class OrderModifyRejected(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     reason : str
         The order update rejected reason.
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order update rejected event occurred.
+        UNIX timestamp (nanoseconds) when the order update rejected event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
-    Raises
-    ------
-    ValueError
-        If `reason` is not a valid string.
     """
 
     def __init__(
@@ -1682,61 +3656,200 @@ cdef class OrderModifyRejected(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
-        str reason not None,
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
+        str reason,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        Condition.valid_string(reason, "reason")
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-        )
+        self._strategy_id = strategy_id
+        self._trader_id = trader_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._venue_order_id = venue_order_id
+        self._account_id = account_id
+        self._reason = reason or str(None)
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
 
-        self.reason = reason
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
-            f"reason={self.reason}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"reason='{self.reason}', "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
-            f"reason={self.reason}, "
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"reason='{self.reason}', "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return self._venue_order_id
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return self._account_id
+
+    @property
+    def reason(self) -> str:
+        """
+        Return the reason the order was rejected.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._reason
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
     @staticmethod
     cdef OrderModifyRejected from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderModifyRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -1745,7 +3858,7 @@ cdef class OrderModifyRejected(OrderEvent):
             venue_order_id=VenueOrderId(v) if v is not None else None,
             account_id=AccountId(a) if a is not None else None,
             reason=values["reason"],
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -1756,14 +3869,14 @@ cdef class OrderModifyRejected(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderModifyRejected",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "account_id": obj.account_id.value if obj.account_id is not None else None,
             "reason": obj.reason,
-            "event_id": obj.id.to_str(),
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1814,25 +3927,21 @@ cdef class OrderCancelRejected(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     reason : str
         The order cancel rejected reason.
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
+        UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
-    Raises
-    ------
-    ValueError
-        If `reason` is not a valid string.
     """
 
     def __init__(
@@ -1841,61 +3950,200 @@ cdef class OrderCancelRejected(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
-        str reason not None,
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
+        str reason,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        Condition.valid_string(reason, "reason")
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-        )
+        self._strategy_id = strategy_id
+        self._trader_id = trader_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._venue_order_id = venue_order_id
+        self._account_id = account_id
+        self._reason = reason or str(None)
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
 
-        self.reason = reason
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
-            f"reason={self.reason}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"reason='{self.reason}', "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
-            f"reason={self.reason}, "
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"reason='{self.reason}', "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return self._venue_order_id
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return self._account_id
+
+    @property
+    def reason(self) -> str:
+        """
+        Return the reason the order was rejected.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._reason
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
     @staticmethod
     cdef OrderCancelRejected from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderCancelRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -1904,7 +4152,7 @@ cdef class OrderCancelRejected(OrderEvent):
             venue_order_id=VenueOrderId(v) if v is not None else None,
             account_id=AccountId(a) if a is not None else None,
             reason=values["reason"],
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -1915,14 +4163,14 @@ cdef class OrderCancelRejected(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderCancelRejected",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "account_id": obj.account_id.value if obj.account_id is not None else None,
             "reason": obj.reason,
-            "event_id": obj.id.to_str(),
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1972,22 +4220,22 @@ cdef class OrderUpdated(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     quantity : Quantity
         The orders current quantity.
-    price : Price, optional with no default so ``None`` must be passed explicitly
+    price : Price or ``None``
         The orders current price.
-    trigger_price : Price, optional with no default so ``None`` must be passed explicitly
+    trigger_price : Price or ``None``
         The orders current trigger.
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order updated event occurred.
+        UNIX timestamp (nanoseconds) when the order updated event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
@@ -2003,11 +4251,11 @@ cdef class OrderUpdated(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         Quantity quantity not None,
-        Price price: Optional[Price],
-        Price trigger_price: Optional[Price],
+        Price price: Price | None,
+        Price trigger_price: Price | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -2015,60 +4263,189 @@ cdef class OrderUpdated(OrderEvent):
     ):
         Condition.positive(quantity, "quantity")
 
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-        )
+        self._strategy_id = strategy_id
+        self._trader_id = trader_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._venue_order_id = venue_order_id
+        self._account_id = account_id
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
 
         self.quantity = quantity
         self.price = price
         self.trigger_price = trigger_price
 
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
-            f"quantity={self.quantity.to_str()}, "
-            f"price={self.price}, "
-            f"trigger_price={self.trigger_price}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"quantity={self.quantity.to_formatted_str() if self.quantity else None}, "
+            f"price={self.price.to_formatted_str() if self.price else None}, "
+            f"trigger_price={self.trigger_price.to_formatted_str() if self.trigger_price else None}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id}, "  # Can be None
-            f"quantity={self.quantity.to_str()}, "
-            f"price={self.price}, "
-            f"trigger_price={self.trigger_price}, "
-            f"event_id={self.id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"quantity={self.quantity.to_formatted_str() if self.quantity else None}, "
+            f"price={self.price.to_formatted_str() if self.price else None}, "
+            f"trigger_price={self.trigger_price.to_formatted_str() if self.trigger_price else None}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return self._venue_order_id
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return self._account_id
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
-        cdef str p = values["price"]
-        cdef str t = values["trigger_price"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
+        cdef str p = values.get("price")
+        cdef str t = values.get("trigger_price")
         return OrderUpdated(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -2079,7 +4456,7 @@ cdef class OrderUpdated(OrderEvent):
             quantity=Quantity.from_str_c(values["quantity"]),
             price=Price.from_str_c(p) if p is not None else None,
             trigger_price=Price.from_str_c(t) if t is not None else None,
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -2090,16 +4467,16 @@ cdef class OrderUpdated(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderUpdated",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "account_id": obj.account_id.value if obj.account_id is not None else None,
             "quantity": str(obj.quantity),
             "price": str(obj.price) if obj.price is not None else None,
             "trigger_price": str(obj.trigger_price) if obj.trigger_price is not None else None,
-            "event_id": obj.id.to_str(),
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -2155,11 +4532,11 @@ cdef class OrderFilled(OrderEvent):
         The account ID (with the venue).
     trade_id : TradeId
         The trade match ID (assigned by the venue).
-    position_id : PositionId, optional with no default so ``None`` must be passed explicitly
+    position_id : PositionId or ``None``
         The position ID associated with the order fill (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
         The execution order side.
-    order_side : OrderType
+    order_type : OrderType
         The execution order type.
     last_qty : Quantity
         The fill quantity for this execution.
@@ -2174,9 +4551,9 @@ cdef class OrderFilled(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order filled event occurred.
+        UNIX timestamp (nanoseconds) when the order filled event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     info : dict[str, object], optional
         The additional fill information.
     reconciliation : bool, default False
@@ -2199,7 +4576,7 @@ cdef class OrderFilled(OrderEvent):
         VenueOrderId venue_order_id not None,
         AccountId account_id not None,
         TradeId trade_id not None,
-        PositionId position_id: Optional[PositionId],
+        PositionId position_id: PositionId | None,
         OrderSide order_side,
         OrderType order_type,
         Quantity last_qty not None,
@@ -2214,22 +4591,21 @@ cdef class OrderFilled(OrderEvent):
         dict info = None,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
-        Condition.positive(last_qty, "last_qty")
+        Condition.positive_int(last_qty._mem.raw, "last_qty")
 
         if info is None:
             info = {}
-        super().__init__(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            account_id,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-        )
+
+        self._strategy_id = strategy_id
+        self._trader_id = trader_id
+        self._instrument_id = instrument_id
+        self._client_order_id = client_order_id
+        self._venue_order_id = venue_order_id
+        self._account_id = account_id
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        self._reconciliation = reconciliation
 
         self.trade_id = trade_id
         self.position_id = position_id
@@ -2242,20 +4618,28 @@ cdef class OrderFilled(OrderEvent):
         self.liquidity_side = liquidity_side
         self.info = info
 
+    def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id.to_str()}, "
-            f"account_id={self.account_id.to_str()}, "
-            f"trade_id={self.trade_id.to_str()}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"trade_id={self.trade_id}, "
             f"position_id={self.position_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
-            f"last_qty={self.last_qty.to_str()}, "
-            f"last_px={self.last_px} {self.currency.code}, "
-            f"commission={self.commission.to_str()}, "
+            f"last_qty={self.last_qty.to_formatted_str()}, "
+            f"last_px={self.last_px.to_formatted_str()} {self.currency.code}, "
+            f"commission={self.commission.to_formatted_str()}, "
             f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"ts_event={self.ts_event})"
         )
@@ -2263,29 +4647,152 @@ cdef class OrderFilled(OrderEvent):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.to_str()}, "
-            f"strategy_id={self.strategy_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id.to_str()}, "
-            f"account_id={self.account_id.to_str()}, "
-            f"trade_id={self.trade_id.to_str()}, "
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"account_id={self.account_id}, "
+            f"trade_id={self.trade_id}, "
             f"position_id={self.position_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
-            f"last_qty={self.last_qty.to_str()}, "
-            f"last_px={self.last_px} {self.currency.code}, "
-            f"commission={self.commission.to_str()}, "
+            f"last_qty={self.last_qty.to_formatted_str()}, "
+            f"last_px={self.last_px.to_formatted_str()} {self.currency.code}, "
+            f"commission={self.commission.to_formatted_str()}, "
             f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
-            f"event_id={self.id.to_str()}, "
+            f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._client_order_id
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or ``None``
+
+        """
+        return self._venue_order_id
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or ``None``
+
+        """
+        return self._account_id
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
     @staticmethod
     cdef OrderFilled from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str position_id_str = values["position_id"]
+        cdef str position_id_str = values.get("position_id")
         return OrderFilled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -2302,10 +4809,10 @@ cdef class OrderFilled(OrderEvent):
             currency=Currency.from_str_c(values["currency"]),
             commission=Money.from_str_c(values["commission"]),
             liquidity_side=liquidity_side_from_str(values["liquidity_side"]),
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            info=msgspec.json.decode(values["info"]),
+            info=values["info"],
             reconciliation=values.get("reconciliation", False),
         )
 
@@ -2314,25 +4821,25 @@ cdef class OrderFilled(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderFilled",
-            "trader_id": obj.trader_id.to_str(),
-            "strategy_id": obj.strategy_id.to_str(),
-            "instrument_id": obj.instrument_id.to_str(),
-            "client_order_id": obj.client_order_id.to_str(),
-            "venue_order_id": obj.venue_order_id.to_str(),
-            "account_id": obj.account_id.to_str(),
-            "trade_id": obj.trade_id.to_str(),
-            "position_id": obj.position_id.to_str() if obj.position_id else None,
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "account_id": obj.account_id.value,
+            "trade_id": obj.trade_id.value,
+            "position_id": obj.position_id.value if obj.position_id else None,
             "order_side": order_side_to_str(obj.order_side),
             "order_type": order_type_to_str(obj.order_type),
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
-            "commission": obj.commission.to_str(),
+            "commission": str(obj.commission),
             "liquidity_side": liquidity_side_to_str(obj.liquidity_side),
-            "event_id": obj.id.to_str(),
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
-            "info": msgspec.json.encode(obj.info),
+            "info": obj.info,
             "reconciliation": obj.reconciliation,
         }
 
@@ -2365,10 +4872,10 @@ cdef class OrderFilled(OrderEvent):
         """
         return OrderFilled.to_dict_c(obj)
 
-    cdef bint is_buy_c(self) except *:
+    cdef bint is_buy_c(self):
         return self.order_side == OrderSide.BUY
 
-    cdef bint is_sell_c(self) except *:
+    cdef bint is_sell_c(self):
         return self.order_side == OrderSide.SELL
 
     @property

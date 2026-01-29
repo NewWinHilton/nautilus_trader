@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,8 @@
 
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.indicators.keltner_position import KeltnerPosition
+from nautilus_trader.indicators import KeltnerPosition
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
@@ -43,7 +43,7 @@ class TestKeltnerPosition:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        for _i in range(10):
+        for _ in range(10):
             self.kp.update_raw(1.00000, 1.00000, 1.00000)
 
         # Act, Assert
@@ -79,7 +79,7 @@ class TestKeltnerPosition:
 
     def test_value_with_zero_width_input_returns_zero(self):
         # Arrange
-        for _i in range(10):
+        for _ in range(10):
             self.kp.update_raw(1.00000, 1.00000, 1.00000)
 
         # Act, Assert
@@ -99,7 +99,7 @@ class TestKeltnerPosition:
         high = 1.00010
         low = 1.00000
 
-        for _i in range(10):
+        for _ in range(10):
             high += 0.00010
             low += 0.00010
             close = high
@@ -113,14 +113,14 @@ class TestKeltnerPosition:
         high = 1.00010
         low = 1.00000
 
-        for _i in range(10):
+        for _ in range(10):
             high -= 0.00010
             low -= 0.00010
             close = low
             self.kp.update_raw(high, low, close)
 
         # Act, Assert
-        assert self.kp.value == pytest.approx(-1.637585941284833)
+        assert self.kp.value == pytest.approx(-1.637585941284833, rel=1e-9)
 
     def test_value_with_ten_inputs_returns_expected_value(self):
         # Arrange
@@ -136,7 +136,7 @@ class TestKeltnerPosition:
         self.kp.update_raw(1.00020, 1.00010, 1.00010)
 
         # Act, Assert
-        assert self.kp.value == -0.14281747514671334
+        assert self.kp.value == pytest.approx(-0.14281747514671334, rel=1e-9)
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange

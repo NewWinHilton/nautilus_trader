@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,31 +14,31 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookPartialDepthMsg
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTradeMsg
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class BinanceSpotDataClient(BinanceCommonDataClient):
     """
-    Provides a data client for the `Binance Spot/Margin` exchange.
+    Provides a data client for the Binance Spot/Margin exchange.
 
     Parameters
     ----------
@@ -52,14 +52,17 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     instrument_provider : InstrumentProvider
         The instrument provider.
-    account_type : BinanceAccountType
-        The account type for the client.
-    base_url_ws : str, optional
+    base_url_ws : str
         The base URL for the WebSocket client.
+    config : BinanceDataClientConfig
+        The configuration for the client.
+    account_type : BinanceAccountType, default 'SPOT'
+        The account type for the client.
+    name : str, optional
+        The custom client ID.
+
     """
 
     def __init__(
@@ -69,15 +72,16 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InstrumentProvider,
+        base_url_ws: str,
+        config: BinanceDataClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
-        base_url_ws: Optional[str] = None,
-    ):
-        if not account_type.is_spot_or_margin:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
-            )
+        name: str | None = None,
+    ) -> None:
+        PyCondition.is_true(
+            account_type.is_spot_or_margin,
+            "account_type was not SPOT, MARGIN or ISOLATED_MARGIN",
+        )
 
         # Spot HTTP API
         self._spot_http_market = BinanceSpotMarketHttpAPI(client, account_type)
@@ -93,10 +97,11 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
+            name=name,
+            config=config,
         )
 
         # Websocket msgspec decoders
@@ -112,12 +117,14 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         instrument_id: InstrumentId = self._get_cached_instrument_id(
             msg.stream.partition("@")[0],
         )
-        book_snapshot: OrderBookSnapshot = msg.data.parse_to_order_book_snapshot(
+        book_snapshot: OrderBookDeltas = msg.data.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
         # Check if book buffer active
-        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
+        book_buffer: list[OrderBookDelta | OrderBookDeltas] | None = self._book_buffer.get(
+            instrument_id,
+        )
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

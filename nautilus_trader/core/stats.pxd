@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,16 +16,16 @@
 cimport numpy as np
 
 
-cpdef double fast_mean(np.ndarray values) except *
+cpdef double fast_mean(np.ndarray values)
 cpdef double fast_mean_iterated(
     np.ndarray values,
     double next_value,
     double current_value,
     int expected_length,
     bint drop_left=*,
-) except *
-cpdef double fast_std(np.ndarray values) except *
-cpdef double fast_std_with_mean(np.ndarray values, double mean) except *
-cpdef double fast_mad(np.ndarray values) except *
-cpdef double fast_mad_with_mean(np.ndarray values, double mean) except *
-cpdef double basis_points_as_percentage(double basis_points) except *
+)
+cpdef double fast_std(np.ndarray values)
+cpdef double fast_std_with_mean(np.ndarray values, double mean)
+cpdef double fast_mad(np.ndarray values)
+cpdef double fast_mad_with_mean(np.ndarray values, double mean)
+cpdef double basis_points_as_percentage(double basis_points)

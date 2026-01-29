@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,44 +13,62 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from enum import Enum
+from typing import Final
 
-from nautilus_trader.core.correctness import PyCondition
+from betfair_parser.exceptions import BetfairError
+from betfair_parser.spec.betting.enums import PersistenceType
+from betfair_parser.spec.betting.enums import Side
+from betfair_parser.spec.betting.enums import TimeInForce as BetfairTimeInForce
+from betfair_parser.spec.common import OrderType
+
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.core.rust.model import OrderType as NautilusOrderType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick_scheme import register_tick_scheme
 from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
 
 
-BETFAIR_VENUE = Venue("BETFAIR")
-BETFAIR_PRICE_PRECISION = 7
-BETFAIR_QUANTITY_PRECISION = 4
-
-
 # ------------------------------- MAPPINGS ------------------------------- #
-
-# Mappings between Nautilus and betfair.
-#
-# Prefixes:
+# Mappings between Nautilus and betfair - prefixes:
 #     N2B = {NAUTILUS: BETFAIR}
 #     B2N = {BETFAIR: NAUTILUS}
-#
-# In Nautilus, we map BUYS in probability space to a BACK
-# (Back @ 3.0 is equivalent to BID/BUY @ 0.33)
 
 
-N2B_SIDE = {
-    OrderSide.BUY: "BACK",
-    OrderSide.SELL: "LAY",
+class OrderSideParser:
+    BACKS = (Side.BACK, "B")
+    LAYS = (Side.LAY, "L")
+
+    @classmethod
+    def to_nautilus(cls, side: Side | str) -> OrderSide:
+        if side in cls.BACKS:
+            return OrderSide.SELL
+        elif side in cls.LAYS:
+            return OrderSide.BUY
+        else:
+            raise ValueError(f"Unknown side: {side}")
+
+    @staticmethod
+    def to_betfair(order_side: OrderSide) -> Side:
+        if order_side == OrderSide.BUY:
+            return Side.LAY
+        elif order_side == OrderSide.SELL:
+            return Side.BACK
+        else:
+            raise ValueError(f"Unknown order_side: {order_side}")
+
+
+N2B_TIME_IN_FORCE: Final[dict[TimeInForce, BetfairTimeInForce]] = {
+    TimeInForce.FOK: BetfairTimeInForce.FILL_OR_KILL,
+    TimeInForce.IOC: BetfairTimeInForce.FILL_OR_KILL,  # min_fill_size 0 also needed
 }
 
-N2B_TIME_IN_FORCE = {
-    TimeInForce.FOK: "FILL_OR_KILL",
+N2B_PERSISTENCE: Final[dict[TimeInForce, PersistenceType]] = {
+    TimeInForce.GTC: PersistenceType.PERSIST,
+    TimeInForce.DAY: PersistenceType.LAPSE,
 }
 
-B2N_MARKET_STREAM_SIDE = {
+B2N_MARKET_SIDE: Final[dict[str, OrderSide]] = {
     "atb": OrderSide.SELL,  # Available to Back / Sell order
     "batb": OrderSide.SELL,  # Best available to Back / Sell order
     "bdatb": OrderSide.SELL,  # Best display to Back / Sell order
@@ -61,24 +79,19 @@ B2N_MARKET_STREAM_SIDE = {
     "spl": OrderSide.BUY,  # Starting Price LAY
 }
 
-B_BID_KINDS = ("atb", "batb", "bdatb")
-B_ASK_KINDS = ("atl", "batl", "bdatl")
-B_SIDE_KINDS = B_BID_KINDS + B_ASK_KINDS
 
-B2N_ORDER_STREAM_SIDE = {
-    "B": OrderSide.BUY,
-    "L": OrderSide.SELL,
-    "BACK": OrderSide.BUY,
-    "LAY": OrderSide.SELL,
+B2N_TIME_IN_FORCE: Final[dict[PersistenceType, TimeInForce]] = {
+    PersistenceType.LAPSE: TimeInForce.DAY,
+    PersistenceType.PERSIST: TimeInForce.GTC,
 }
 
-B2N_TIME_IN_FORCE = {
-    "LAPSE": TimeInForce.DAY,
-    "PERSIST": TimeInForce.GTC,
+B2N_ORDER_TYPE: Final[dict[OrderType, NautilusOrderType]] = {
+    OrderType.LIMIT: NautilusOrderType.LIMIT,
+    OrderType.LIMIT_ON_CLOSE: NautilusOrderType.LIMIT,
+    OrderType.MARKET_ON_CLOSE: NautilusOrderType.MARKET,
 }
 
-
-BETFAIR_PRICE_TIERS = [
+BETFAIR_PRICE_TIERS: Final[list[tuple[float, ...]]] = [
     (1.01, 2, 0.01),
     (2, 3, 0.02),
     (3, 4, 0.05),
@@ -90,98 +103,45 @@ BETFAIR_PRICE_TIERS = [
     (50, 100, 5),
     (100, 1010, 10),
 ]
-BETFAIR_PRICES = list(
-    reversed(TieredTickScheme(name="betfair_prob", tiers=BETFAIR_PRICE_TIERS).ticks),
-)
-BETFAIR_PROBABILITIES = [
-    Price(Price.from_int(1) / tick, precision=BETFAIR_PRICE_PRECISION) for tick in BETFAIR_PRICES
-]
-BETFAIR_PRICE_TO_PROBABILITY_MAP = {
-    price: prob for price, prob in zip(BETFAIR_PRICES, BETFAIR_PROBABILITIES)
-}
-BETFAIR_PROBABILITY_TO_PRICE_MAP = {
-    price: prob for price, prob in zip(BETFAIR_PROBABILITIES, BETFAIR_PRICES)
-}
-MAX_BET_PROB = max(BETFAIR_PROBABILITY_TO_PRICE_MAP)
-MIN_BET_PROB = min(BETFAIR_PROBABILITY_TO_PRICE_MAP)
 
 BETFAIR_TICK_SCHEME = TieredTickScheme(
-    name="BETFAIR",
-    tiers=[
-        (start, stop, stop - start)
-        for start, stop in zip(
-            BETFAIR_PROBABILITIES,
-            BETFAIR_PROBABILITIES[1:] + [Price.from_int(1)],
-        )
-    ],
+    "BETFAIR",
+    BETFAIR_PRICE_TIERS,
+    price_precision=BETFAIR_PRICE_PRECISION,
 )
+BETFAIR_FLOAT_TO_PRICE = {price.as_double(): price for price in BETFAIR_TICK_SCHEME.ticks}
+MAX_BET_PRICE = max(BETFAIR_TICK_SCHEME.ticks)
+MIN_BET_PRICE = min(BETFAIR_TICK_SCHEME.ticks)
 register_tick_scheme(BETFAIR_TICK_SCHEME)
 
 
-def price_to_probability(price_str: str) -> Price:
-    PyCondition.type(price_str, str, "price", "str")
-    price = Price.from_str(f"{float(price_str):.2f}")
-    assert price > 0.0
-    if price in BETFAIR_PRICE_TO_PROBABILITY_MAP:
-        return BETFAIR_PRICE_TO_PROBABILITY_MAP[price]
-    else:
-        # This is likely a trade tick that has been currency adjusted, simply return the nearest price
-        value = Price.from_int(1) / price
-        bid = BETFAIR_TICK_SCHEME.next_bid_price(value=value)
-        ask = BETFAIR_TICK_SCHEME.next_ask_price(value=value)
-        if abs(bid - value) < abs(ask - value):
-            return bid
-        else:
-            return ask
-
-
-def probability_to_price(probability: Price):
-    return BETFAIR_PROBABILITY_TO_PRICE_MAP[probability]
-
-
-# ------------------------------- BETFAIR CONSTANTS ------------------------------- #
-
-
-EVENT_TYPE_TO_NAME = {
-    "1": "Soccer",
-    "2": "Tennis",
-    "3": "Golf",
-    "4": "Cricket",
-    "5": "Rugby Union",
-    "1477": "Rugby League",
-    "6": "Boxing",
-    "7": "Horse Racing",
-    "8": "Motor Sport",
-    "27454571": "Esports",
-    "10": "Special Bets",
-    "998917": "Volleyball",
-    "11": "Cycling",
-    "2152880": "Gaelic Games",
-    "3988": "Athletics",
-    "6422": "Snooker",
-    "7511": "Baseball",
-    "6231": "Financial Bets",
-    "6423": "American Football",
-    "7522": "Basketball",
-    "7524": "Ice Hockey",
-    "61420": "Australian Rules",
-    "468328": "Handball",
-    "3503": "Darts",
-    "26420387": "Mixed Martial Arts",
-    "4339": "Greyhound Racing",
-    "2378961": "Politics",
-}
-
-
-class HistoricalSportType(Enum):
+def is_session_error(error: BetfairError) -> bool:
     """
-    Represents a `Betfair` historical sport type.
-    """
+    Check if a BetfairError is a session expiry error.
 
-    HORSE_RACING = "Horse Racing"
-    SOCCER = "Soccer"
-    TENNIS = "Tennis"
-    CRICKET = "Cricket"
-    GOLF = "Golf"
-    GREYHOUND_RACING = "Greyhound Racing"
-    OTHER_SPORTS = "Other Sports"
+    Session errors (NO_SESSION, INVALID_SESSION_INFORMATION) are expected to occur
+    every 12-24 hours and should trigger automatic reconnection.
+
+    This also handles errors from betfair-parser when it can't parse undocumented
+    error codes like -32099 (JSON-RPC server errors).
+
+    Parameters
+    ----------
+    error : BetfairError
+        The error to check.
+
+    Returns
+    -------
+    bool
+        True if the error is a session expiry error.
+
+    """
+    if not error.args:
+        return False
+    msg = str(error.args[0])
+    return (
+        "NO_SESSION" in msg
+        or "INVALID_SESSION_INFORMATION" in msg
+        or "is not a valid JSONExceptionCode" in msg
+        or "JSON_PARSE_ERROR" in msg
+    )

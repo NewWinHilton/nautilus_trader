@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,7 +23,7 @@ cdef class PositionSizer:
     cdef readonly Instrument instrument
     """The instrument for position sizing.\n\n:returns: `Instrument`"""
 
-    cpdef void update_instrument(self, Instrument instrument) except *
+    cpdef void update_instrument(self, Instrument instrument)
     cpdef Quantity calculate(
         self,
         Price entry,

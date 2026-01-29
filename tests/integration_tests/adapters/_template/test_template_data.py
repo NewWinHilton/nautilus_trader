@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,34 +15,32 @@
 
 import pytest
 
-from nautilus_trader.adapters._template.data import TemplateLiveMarketDataClient  # noqa
+from nautilus_trader.adapters._template.data import TemplateLiveMarketDataClient
 from nautilus_trader.live.data_client import LiveMarketDataClient
 
 
-@pytest.mark.skip(reason="example")
-@pytest.fixture()
+pytestmark = pytest.mark.skip(reason="template")
+
+
+@pytest.fixture
 def data_client() -> LiveMarketDataClient:
     return TemplateLiveMarketDataClient()  # type: ignore
 
 
-@pytest.mark.skip(reason="example")
 def test_connect(data_client: LiveMarketDataClient):
     data_client.connect()
     assert data_client.is_connected
 
 
-@pytest.mark.skip(reason="example")
 def test_disconnect(data_client: LiveMarketDataClient):
     data_client.connect()
     data_client.disconnect()
     assert not data_client.is_connected
 
 
-@pytest.mark.skip(reason="example")
 def test_reset(data_client: LiveMarketDataClient):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_dispose(data_client: LiveMarketDataClient):
     pass

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import os
 
 import pytest
@@ -21,36 +20,29 @@ import pytest
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import LiveClock
 
 
 @pytest.mark.asyncio
 async def test_binance_futures_testnet_market_http_client():
-    loop = asyncio.get_event_loop()
     clock = LiveClock()
 
-    account_type = BinanceAccountType.FUTURES_USDT
+    account_type = BinanceAccountType.USDT_FUTURES
 
     client = get_cached_binance_http_client(
-        loop=loop,
         clock=clock,
-        logger=Logger(clock=clock),
         account_type=account_type,
-        key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
-        secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
+        api_key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
+        api_secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
         is_testnet=True,
     )
-    await client.connect()
 
     provider = BinanceFuturesInstrumentProvider(
         client=client,
-        logger=Logger(clock=clock),
-        account_type=BinanceAccountType.FUTURES_USDT,
+        clock=clock,
+        account_type=BinanceAccountType.USDT_FUTURES,
     )
 
     await provider.load_all_async()
 
     print(provider.count)
-
-    await client.disconnect()

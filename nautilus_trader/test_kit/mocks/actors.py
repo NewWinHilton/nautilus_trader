@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,10 +18,17 @@ from typing import Any
 
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
-from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.message import Event
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.instruments import Instrument
 
 
-class MockActorConfig(ActorConfig):
+class MockActorConfig(ActorConfig, frozen=True):
     """
     Provides a mock actor config for testing.
     """
@@ -34,10 +41,10 @@ class MockActor(Actor):
     Provides a mock actor for testing.
     """
 
-    def __init__(self, config: ActorConfig = None):
+    def __init__(self, config: ActorConfig | None = None):
         super().__init__(config)
 
-        self.object_storer = ObjectStorer()
+        self.store: list[object] = []
 
         self.calls: list[str] = []
         self._user_state: dict[str, Any] = {}
@@ -47,61 +54,105 @@ class MockActor(Actor):
         return self._user_state
 
     def on_start(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     def on_stop(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     def on_resume(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     def on_reset(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     def on_dispose(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     def on_degrade(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     def on_fault(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
-    def on_instrument(self, instrument) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(instrument)
+    def on_instrument(self, instrument: Instrument) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(instrument)
 
-    def on_instruments(self, instruments) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(instruments)
+    def on_instruments(self, instruments: list[Instrument]) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(instruments)
 
-    def on_ticker(self, ticker):
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(ticker)
+    def on_quote_tick(self, tick: QuoteTick) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(tick)
 
-    def on_quote_tick(self, tick):
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(tick)
+    def on_trade_tick(self, tick: TradeTick) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(tick)
 
-    def on_trade_tick(self, tick) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(tick)
+    def on_bar(self, bar: Bar) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(bar)
 
-    def on_bar(self, bar) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(bar)
+    def on_data(self, data: Data) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(data)
 
-    def on_data(self, data) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(data)
+    def on_signal(self, signal: Data) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(signal)
 
-    def on_strategy_data(self, data) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(data)
+    def on_strategy_data(self, data: Data) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(data)
 
-    def on_event(self, event) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(event)
+    def on_event(self, event: Event) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(event)
+
+    def on_order_filled(self, event: OrderFilled) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(event)
+
+    def on_order_canceled(self, event: OrderCanceled) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(event)
 
 
 class KaboomActor(Actor):
@@ -115,10 +166,10 @@ class KaboomActor(Actor):
         self._explode_on_start = True
         self._explode_on_stop = True
 
-    def set_explode_on_start(self, setting) -> None:
+    def set_explode_on_start(self, setting: bool) -> None:
         self._explode_on_start = setting
 
-    def set_explode_on_stop(self, setting) -> None:
+    def set_explode_on_stop(self, setting: bool) -> None:
         self._explode_on_stop = setting
 
     def on_start(self) -> None:
@@ -144,20 +195,23 @@ class KaboomActor(Actor):
     def on_fault(self) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_instrument(self, instrument) -> None:
+    def on_instrument(self, instrument: Instrument) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_quote_tick(self, tick) -> None:
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_trade_tick(self, tick) -> None:
+    def on_trade_tick(self, tick: TradeTick) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_bar(self, bar) -> None:
+    def on_bar(self, bar: Bar) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_data(self, data) -> None:
+    def on_data(self, data: Data) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_event(self, event) -> None:
+    def on_signal(self, signal: Data) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_event(self, event: Event) -> None:
         raise RuntimeError(f"{self} BOOM!")

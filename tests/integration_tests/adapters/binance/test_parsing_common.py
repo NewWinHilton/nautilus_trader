@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,30 +13,44 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
+from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
+from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceCandlestick
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesBalanceInfo
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 BTCUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBinanceCommonParsing:
-    def __init__(self) -> None:
+    def setup(self):
         self._spot_enum_parser = BinanceSpotEnumParser()
+        self._futures_enum_parser = BinanceFuturesEnumParser()
 
     @pytest.mark.parametrize(
-        "order_type, expected",
+        ("order_type", "expected"),
         [
             [BinanceOrderType.LIMIT, OrderType.LIMIT],
             [BinanceOrderType.MARKET, OrderType.MARKET],
@@ -56,10 +70,46 @@ class TestBinanceCommonParsing:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "resolution, expected_type",
+        ("order_type", "expected"),
+        [
+            [BinanceOrderType.LIMIT, OrderType.LIMIT],
+            [BinanceOrderType.MARKET, OrderType.MARKET],
+            [BinanceOrderType.STOP, OrderType.STOP_LIMIT],
+            [BinanceOrderType.STOP_MARKET, OrderType.STOP_MARKET],
+            [BinanceOrderType.TAKE_PROFIT, OrderType.LIMIT_IF_TOUCHED],
+            [BinanceOrderType.TAKE_PROFIT_MARKET, OrderType.MARKET_IF_TOUCHED],
+            [BinanceOrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_MARKET],
+            [BinanceOrderType.LIQUIDATION, OrderType.MARKET],
+            [BinanceOrderType.ADL, OrderType.MARKET],
+        ],
+    )
+    def test_futures_parse_binance_order_type(self, order_type, expected):
+        # Arrange, Act
+        result = self._futures_enum_parser.parse_binance_order_type(order_type)
+
+        # Assert
+        assert result == expected
+
+    def test_futures_market_order_type_maps_to_market(self):
+        # Arrange, Act
+        result = self._futures_enum_parser.futures_int_to_ext_order_type[OrderType.MARKET]
+
+        # Assert
+        assert result == BinanceOrderType.MARKET
+
+    @pytest.mark.parametrize(
+        ("resolution", "expected_type"),
         [
             [
-                "1m",
+                BinanceKlineInterval("1s"),
+                BarType(
+                    BTCUSDT_BINANCE.id,
+                    BarSpecification(1, BarAggregation.SECOND, PriceType.LAST),
+                    AggregationSource.EXTERNAL,
+                ),
+            ],
+            [
+                BinanceKlineInterval("1m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
@@ -67,7 +117,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "3m",
+                BinanceKlineInterval("3m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(3, BarAggregation.MINUTE, PriceType.LAST),
@@ -75,7 +125,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "5m",
+                BinanceKlineInterval("5m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST),
@@ -83,7 +133,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "15m",
+                BinanceKlineInterval("15m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(15, BarAggregation.MINUTE, PriceType.LAST),
@@ -91,7 +141,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "30m",
+                BinanceKlineInterval("30m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(30, BarAggregation.MINUTE, PriceType.LAST),
@@ -99,7 +149,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "1h",
+                BinanceKlineInterval("1h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.HOUR, PriceType.LAST),
@@ -107,7 +157,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "2h",
+                BinanceKlineInterval("2h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(2, BarAggregation.HOUR, PriceType.LAST),
@@ -115,7 +165,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "4h",
+                BinanceKlineInterval("4h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(4, BarAggregation.HOUR, PriceType.LAST),
@@ -123,7 +173,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "6h",
+                BinanceKlineInterval("6h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(6, BarAggregation.HOUR, PriceType.LAST),
@@ -131,7 +181,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "8h",
+                BinanceKlineInterval("8h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(8, BarAggregation.HOUR, PriceType.LAST),
@@ -139,7 +189,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "12h",
+                BinanceKlineInterval("12h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(12, BarAggregation.HOUR, PriceType.LAST),
@@ -147,7 +197,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "1d",
+                BinanceKlineInterval("1d"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
@@ -155,15 +205,15 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "3d",
+                BinanceKlineInterval("1d"),
                 BarType(
                     BTCUSDT_BINANCE.id,
-                    BarSpecification(3, BarAggregation.DAY, PriceType.LAST),
+                    BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
                     AggregationSource.EXTERNAL,
                 ),
             ],
             [
-                "1w",
+                BinanceKlineInterval("1w"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.WEEK, PriceType.LAST),
@@ -171,7 +221,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "1M",
+                BinanceKlineInterval("1M"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.MONTH, PriceType.LAST),
@@ -211,3 +261,239 @@ class TestBinanceCommonParsing:
 
         # Assert
         assert bar.bar_type == expected_type
+
+    @pytest.mark.parametrize(
+        ("position_id", "expected"),
+        [
+            [PositionId("P-20240817-BTCUSDT-LONG"), BinanceFuturesPositionSide.LONG],
+            [PositionId("P-20240817-BTCUSDT-SHORT"), BinanceFuturesPositionSide.SHORT],
+            [PositionId("P-20240817-BTCUSDT-BOTH"), BinanceFuturesPositionSide.BOTH],
+        ],
+    )
+    def test_parse_position_id_to_binance_futures_position_side(self, position_id, expected):
+        # Arrange, Act
+        result = self._futures_enum_parser.parse_position_id_to_binance_futures_position_side(
+            position_id,
+        )
+
+        # Assert
+        assert result == expected
+
+
+def test_binance_futures_parse_to_balances() -> None:
+    # Arrange
+    balance_infos = [
+        BinanceFuturesBalanceInfo(
+            asset="FDUSD",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="145.00731942",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="BNB",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="0.26632926",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="USDT",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="2.19077500",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="2.19077500",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="144.65930217",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=1709962270029,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="USDC",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="141.87086959",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="BUSD",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="142.12699008",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="ETH",
+            walletBalance="0.03856162",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.03856162",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.03856162",
+            crossUnPnl="0.00000000",
+            availableBalance="0.03436859",
+            maxWithdrawAmount="0.03436859",
+            marginAvailable=True,
+            updateTime=1709962270029,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="BTC",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="0.00192305",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+    ]
+
+    # Act, Assert (`AccountBalance` asserts invariants)
+    for info in balance_infos:
+        info.parse_to_account_balance()
+
+
+class TestBinanceOrderParsing:
+    def setup(self):
+        self._spot_enum_parser = BinanceSpotEnumParser()
+        self._futures_enum_parser = BinanceFuturesEnumParser()
+
+    def test_binance_order_spot_avg_px_calculated_from_cumulative_fields(self):
+        # Arrange: Spot order with cummulativeQuoteQty and executedQty (no avgPrice)
+        order = BinanceOrder(
+            symbol="BTCUSDT",
+            orderId=12345,
+            clientOrderId="test-order-1",
+            price="50000.00",
+            origQty="0.1",
+            executedQty="0.1",
+            cummulativeQuoteQty="5000.00",  # 50000 * 0.1 = 5000
+            status=BinanceOrderStatus.FILLED,
+            timeInForce=BinanceTimeInForce.GTC,
+            type=BinanceOrderType.LIMIT,
+            side=BinanceOrderSide.BUY,
+            time=1700000000000,
+            updateTime=1700000001000,
+        )
+
+        # Act
+        report = order.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=TestInstrumentProvider.btcusdt_binance().id,
+            report_id=UUID4(),
+            enum_parser=self._spot_enum_parser,
+            treat_expired_as_canceled=False,
+            ts_init=0,
+        )
+
+        expected_avg_px = Decimal("5000.00") / Decimal("0.1")
+        assert report.avg_px == expected_avg_px
+
+    def test_binance_order_spot_avg_px_none_when_zero_fills(self):
+        # Arrange: Spot order with zero executedQty
+        order = BinanceOrder(
+            symbol="BTCUSDT",
+            orderId=12345,
+            clientOrderId="test-order-2",
+            price="50000.00",
+            origQty="0.1",
+            executedQty="0",
+            cummulativeQuoteQty="0",
+            status=BinanceOrderStatus.NEW,
+            timeInForce=BinanceTimeInForce.GTC,
+            type=BinanceOrderType.LIMIT,
+            side=BinanceOrderSide.BUY,
+            time=1700000000000,
+            updateTime=1700000001000,
+        )
+
+        # Act
+        report = order.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=TestInstrumentProvider.btcusdt_binance().id,
+            report_id=UUID4(),
+            enum_parser=self._spot_enum_parser,
+            treat_expired_as_canceled=False,
+            ts_init=0,
+        )
+
+        assert report.avg_px is None
+
+    def test_binance_order_futures_avg_px_from_avg_price_field(self):
+        # Arrange: Futures order with avgPrice field
+        order = BinanceOrder(
+            symbol="BTCUSDT",
+            orderId=12345,
+            clientOrderId="test-order-3",
+            price="50000.00",
+            origQty="0.1",
+            executedQty="0.1",
+            avgPrice="50100.00",  # Futures-specific field
+            status=BinanceOrderStatus.FILLED,
+            timeInForce=BinanceTimeInForce.GTC,
+            type=BinanceOrderType.LIMIT,
+            side=BinanceOrderSide.BUY,
+            time=1700000000000,
+            updateTime=1700000001000,
+        )
+
+        # Act
+        report = order.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=TestInstrumentProvider.btcusdt_binance().id,
+            report_id=UUID4(),
+            enum_parser=self._futures_enum_parser,
+            treat_expired_as_canceled=False,
+            ts_init=0,
+        )
+
+        assert report.avg_px == Decimal("50100.00")

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,13 +26,13 @@ cdef class Condition:
     Provides checking of function or method conditions.
 
     A condition is a predicate which must be true just prior to the execution of
-    some section of code - for correct behaviour as per the design specification.
+    some section of code - for correct behavior as per the design specification.
 
     If a check fails, then an Exception is thrown with a descriptive message.
     """
 
     @staticmethod
-    cdef void true(bint predicate, str fail_msg, ex_type = None) except *:
+    cdef void is_true(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is True.
 
@@ -61,7 +61,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void false(bint predicate, str fail_msg, ex_type = None) except *:
+    cdef void is_false(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is False.
 
@@ -90,7 +90,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void none(object argument, str param, ex_type = None) except *:
+    cdef void none(object argument, str param, ex_type = None):
         """
         Check the argument is ``None``.
 
@@ -115,11 +115,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' argument was not ``None``",
+            msg=f"\'{param}\' argument was not `None`",
         )
 
     @staticmethod
-    cdef void not_none(object argument, str param, ex_type = None) except *:
+    cdef void not_none(object argument, str param, ex_type = None):
         """
         Check the argument is not ``None``.
 
@@ -144,7 +144,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' argument was None",
+            msg=f"\'{param}\' argument was `None`",
         )
 
     @staticmethod
@@ -153,7 +153,7 @@ cdef class Condition:
         object expected,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the argument is of the specified type.
 
@@ -161,8 +161,8 @@ cdef class Condition:
         ----------
         argument : object
             The object to check.
-        expected : object or tuple of objects
-            The expected class type.
+        expected : type or tuple of types
+            The expected type(s).
         param : str
             The argument parameter name.
         ex_type : Exception, optional
@@ -180,7 +180,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' argument was not of type {expected}, was {type(argument)}",
+            msg=f"\'{param}\' argument not of type {expected}, was {type(argument)}",
         )
 
     @staticmethod
@@ -189,7 +189,7 @@ cdef class Condition:
         object expected,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the argument is of the specified type, or is ``None``.
 
@@ -197,8 +197,8 @@ cdef class Condition:
         ----------
         argument : object
             The object to check.
-        expected : object
-            The expected class type (if not ``None``).
+        expected : type or tuple of types
+            The expected type(s) (if not ``None``).
         param : str
             The argument parameter name.
         ex_type : Exception, optional
@@ -216,7 +216,7 @@ cdef class Condition:
         Condition.type(argument, expected, param, ex_type)
 
     @staticmethod
-    cdef void callable(object argument, str param, ex_type = None) except *:
+    cdef void callable(object argument, str param, ex_type = None):
         """
         Check the object is of type `Callable`.
 
@@ -241,11 +241,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' object was not callable",
+            msg=f"\'{param}\' object was not callable",
         )
 
     @staticmethod
-    cdef void callable_or_none(object argument, str param, ex_type = None) except *:
+    cdef void callable_or_none(object argument, str param, ex_type = None):
         """
         Check the object is of type `Callable` or ``None``.
 
@@ -276,7 +276,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the objects are equal.
 
@@ -305,9 +305,8 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param1}\' {type(argument1)} of {argument1} "
-                 f"was not equal to "
-                 f"the \'{param2}\' {type(argument2)} of {argument2}"),
+            msg=(f"\'{param1}\' {type(argument1)} of {argument1} "
+                 f"was not equal to \'{param2}\' {type(argument2)} of {argument2}"),
         )
 
     @staticmethod
@@ -317,7 +316,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the objects are not equal.
 
@@ -346,8 +345,8 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param1}\' {type(object1)} of {object1} "
-                 f"was equal to the \"{param2}\" {type(object2)} of {object1}"),
+            msg=(f"\'{param1}\' {type(object1)} of {object1} "
+                 f"was equal to \'{param2}\' {type(object2)} of {object1}"),
         )
 
     @staticmethod
@@ -356,7 +355,7 @@ cdef class Condition:
         type expected_type,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the list only contains types of the given expected type.
 
@@ -385,8 +384,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' collection contained an element with "
-                 f"a type other than {expected_type}"),
+            msg=f"\'{param}\' collection contained an element with type other than {expected_type}",
         )
 
     @staticmethod
@@ -396,7 +394,7 @@ cdef class Condition:
         type value_type,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
@@ -431,7 +429,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the element is contained within the specified collection.
 
@@ -462,8 +460,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=KeyError,
             ex_type=ex_type,
-            msg=(f"The \'{param1}\' {element} was not contained in "
-                 f"the {param2} collection"),
+            msg=f"\'{param1}\' {element} not contained in \'{param2}\' collection",
         )
 
     @staticmethod
@@ -473,7 +470,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the element is not contained within the specified collection.
 
@@ -504,12 +501,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=KeyError,
             ex_type=ex_type,
-            msg=(f"The \'{param1}\' {element} was already contained in "
-                 f"the \'{param2}\' collection"),
+            msg=f"\'{param1}\' {element} already contained in \'{param2}\' collection",
         )
 
     @staticmethod
-    cdef void not_empty(object collection, str param, ex_type = None) except *:
+    cdef void not_empty(object collection, str param, ex_type = None):
         """
         Check the collection is not empty.
 
@@ -536,11 +532,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' collection was empty",
+            msg=f"\'{param}\' collection was empty",
         )
 
     @staticmethod
-    cdef void empty(object collection, str param, ex_type = None) except *:
+    cdef void empty(object collection, str param, ex_type = None):
         """
         Check the collection is empty.
 
@@ -567,11 +563,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' collection was not empty",
+            msg=f"\'{param}\' collection was not empty",
         )
 
     @staticmethod
-    cdef void positive(double value, str param, ex_type = None) except *:
+    cdef void positive(double value, str param, ex_type = None):
         """
         Check the real number value is positive (> 0).
 
@@ -596,11 +592,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not a positive real, was {value:_}",
+            msg=f"\'{param}\' not a positive real, was {value:_}",
         )
 
     @staticmethod
-    cdef void positive_int(int value, str param, ex_type = None) except *:
+    cdef void positive_int(value: int, str param, ex_type = None):
         """
         Check the integer value is a positive integer (> 0).
 
@@ -625,11 +621,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not a positive integer, was {value:_}",
+            msg=f"\'{param}\' not a positive integer, was {value:_}",
         )
 
     @staticmethod
-    cdef void not_negative(double value, str param, ex_type = None) except *:
+    cdef void not_negative(double value, str param, ex_type = None):
         """
         Check the real number value is not negative (< 0).
 
@@ -654,11 +650,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value:_}",
+            msg=f"\'{param}\' not greater than or equal to zero (>= 0), was {value:_}",
         )
 
     @staticmethod
-    cdef void not_negative_int(int value, str param, ex_type = None) except *:
+    cdef void not_negative_int(value: int, str param, ex_type = None):
         """
         Check the integer value is not negative (< 0).
 
@@ -683,7 +679,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value:_}",
+            msg=f"\'{param}\' not greater than or equal to zero (>= 0), was {value:_}",
         )
 
     @staticmethod
@@ -693,9 +689,12 @@ cdef class Condition:
         double end,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the real number value is within the specified range (inclusive).
+
+        This function accounts for potential floating-point precision issues by using a small
+        epsilon value of 1e-15.
 
         Parameters
         ----------
@@ -716,24 +715,24 @@ cdef class Condition:
               If `value` is not within the range (inclusive of the end points).
 
         """
-        if start <= value <= end:
+        cdef double epsilon = 1e-15  # Epsilon to account for floating-point precision issues
+        if start - epsilon <= value <= end + epsilon:
             return  # Check passed
 
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' was out of range [{start:_}, {end:_}]"
-                 f", was {value:_}"),
+            msg=f"\'{param}\' out of range [{start:_}, {end:_}], was {value:_}",
         )
 
     @staticmethod
     cdef void in_range_int(
-        int value,
-        int start,
-        int end,
+        value,
+        start,
+        end,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the integer value is within the specified range (inclusive).
 
@@ -762,12 +761,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' was out of range [{start:_}, {end:_}]"
-                 f", was {value:_}"),
+            msg=f"\'{param}\' out of range [{start:_}, {end:_}], was {value:_}",
         )
 
     @staticmethod
-    cdef void valid_string(str argument, str param, ex_type = None) except *:
+    cdef void valid_string(str argument, str param, ex_type = None):
         """
         Check the string argument is valid (not ``None``, empty or whitespace).
 
@@ -794,15 +792,14 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' string argument was invalid"
-                 f", was \'{argument}\'"),
+            msg=f"\'{param}\' string was invalid, was \'{argument}\'",
         )
 
 
 class PyCondition:
 
     @staticmethod
-    def true(bint predicate, str fail_msg, ex_type = None):
+    def is_true(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is True.
 
@@ -821,10 +818,10 @@ class PyCondition:
             If `predicate` condition is False.
 
         """
-        Condition.true(predicate, fail_msg, ex_type)
+        Condition.is_true(predicate, fail_msg, ex_type)
 
     @staticmethod
-    def false(bint predicate, str fail_msg, ex_type = None):
+    def is_false(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is False.
 
@@ -843,7 +840,7 @@ class PyCondition:
             If `predicate` condition is True.
 
         """
-        Condition.false(predicate, fail_msg, ex_type)
+        Condition.is_false(predicate, fail_msg, ex_type)
 
     @staticmethod
     def none(argument, str param, ex_type = None):
@@ -1203,7 +1200,7 @@ class PyCondition:
         Condition.positive(value, param, ex_type)
 
     @staticmethod
-    def positive_int(int value, str param, ex_type = None):
+    def positive_int(value: int, str param, ex_type = None):
         """
         Check the integer value is a positive integer (> 0).
 
@@ -1247,7 +1244,7 @@ class PyCondition:
         Condition.not_negative(value, param, ex_type)
 
     @staticmethod
-    def not_negative_int(int value, str param, ex_type = None):
+    def not_negative_int(value: int, str param, ex_type = None):
         """
         Check the integer value is not negative (< 0).
 
@@ -1295,7 +1292,7 @@ class PyCondition:
         Condition.in_range(value, start, end, param, ex_type)
 
     @staticmethod
-    def in_range_int(int value, int start, int end, param, ex_type = None):
+    def in_range_int(value: int, start: int, end: int, param, ex_type = None):
         """
         Check the integer value is within the specified range (inclusive).
 

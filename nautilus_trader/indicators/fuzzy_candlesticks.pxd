@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.indicators.fuzzy_enums.candle_body cimport CandleBodySize
-from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection
-from nautilus_trader.indicators.fuzzy_enums.candle_size cimport CandleSize
-from nautilus_trader.indicators.fuzzy_enums.candle_wick cimport CandleWickSize
-from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.indicators.base cimport Indicator
+from nautilus_trader.indicators.fuzzy_enums cimport CandleBodySize
+from nautilus_trader.indicators.fuzzy_enums cimport CandleDirection
+from nautilus_trader.indicators.fuzzy_enums cimport CandleSize
+from nautilus_trader.indicators.fuzzy_enums cimport CandleWickSize
+from nautilus_trader.model.data cimport Bar
 
 
 cdef class FuzzyCandle:
@@ -55,14 +55,14 @@ cdef class FuzzyCandlesticks(Indicator):
     cdef readonly FuzzyCandle value
     """The last fuzzy candle.\n\n:returns: `FuzzyCandle`"""
 
-    cpdef void handle_bar(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar)
     cpdef void update_raw(
         self,
         double open,
         double high,
         double low,
         double close,
-    ) except *
+    )
 
     cdef CandleDirection _fuzzify_direction(self, double open, double close)
     cdef CandleSize _fuzzify_size(self, double length, double mean_length, double sd_lengths)

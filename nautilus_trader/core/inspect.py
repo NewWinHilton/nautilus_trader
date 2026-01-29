@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,23 +15,28 @@
 
 import gc
 import sys
+from typing import Any
 
 
 def is_nautilus_class(cls: type) -> bool:
     """
     Determine whether a class is a builtin nautilus type.
     """
+    if cls.__module__.startswith("nautilus_trader.core.nautilus_pyo3.model"):
+        return True
+    if cls.__module__.startswith("nautilus_trader.model.greeks"):
+        return False
     if cls.__module__.startswith("nautilus_trader.model"):
         return True
-    elif cls.__module__.startswith("nautilus_trader.test_kit"):
+    if cls.__module__.startswith("nautilus_trader.common"):
+        # Custom user signals return False, everything else returns True
+        return not cls.__name__.startswith("Signal")
+    if cls.__module__.startswith("nautilus_trader.test_kit"):
         return False
-    elif any(base.__module__.startswith("nautilus_trader.model") for base in cls.__bases__):
-        return True
-    else:
-        return False
+    return bool(any(base.__module__.startswith("nautilus_trader.model") for base in cls.__bases__))
 
 
-def get_size_of(obj):
+def get_size_of(obj: Any) -> int:
     """
     Return the bytes size in memory of the given object.
 
@@ -65,7 +70,7 @@ def get_size_of(obj):
         # The new obj_q will be the ones that were not marked,
         # and we will update marked with their ids so we will
         # not traverse them again.
-        obj_q = new_ref.values()
+        obj_q = new_ref.values()  # type: ignore
         marked.update(new_ref.keys())
 
     return size

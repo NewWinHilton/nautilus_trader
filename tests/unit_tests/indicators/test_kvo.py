@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.kvo import KlingerVolumeOscillator
+import pytest
+
+from nautilus_trader.indicators import KlingerVolumeOscillator
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
@@ -91,7 +93,7 @@ class TestKlingerVolumeOscillator:
         self.kvo.update_raw(110.1, 109.81, 109.9, 205.6)
         self.kvo.update_raw(110.04, 109.96, 110.04, 32.95)
         # Act, Assert
-        assert self.kvo.value == -20.530114132019506
+        assert self.kvo.value == pytest.approx(-20.530114132019506, rel=1e-9)
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange

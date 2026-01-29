@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,8 @@
 from decimal import Decimal
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.accounting.margin_models cimport MarginModel
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport MarginBalance
@@ -26,6 +27,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class MarginAccount(Account):
+    cdef MarginModel _margin_model
     cdef dict _leverages
     cdef dict _margins
 
@@ -45,14 +47,15 @@ cdef class MarginAccount(Account):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void set_default_leverage(self, leverage: Decimal) except *
-    cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *
-    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *
-    cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint) except *
-    cpdef void update_margin(self, MarginBalance margin) except *
-    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *
-    cpdef void clear_margin_maint(self, InstrumentId instrument_id) except *
-    cpdef void clear_margin(self, InstrumentId instrument_id) except *
+    cpdef void set_default_leverage(self, leverage: Decimal)
+    cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal)
+    cpdef void set_margin_model(self, MarginModel margin_model)
+    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init)
+    cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint)
+    cpdef void update_margin(self, MarginBalance margin)
+    cpdef void clear_margin_init(self, InstrumentId instrument_id)
+    cpdef void clear_margin_maint(self, InstrumentId instrument_id)
+    cpdef void clear_margin(self, InstrumentId instrument_id)
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
@@ -61,7 +64,7 @@ cdef class MarginAccount(Account):
         Instrument instrument,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=*,
+        bint use_quote_for_inverse=*,
     )
 
     cpdef Money calculate_margin_maint(
@@ -70,5 +73,11 @@ cdef class MarginAccount(Account):
         PositionSide side,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=*,
+        bint use_quote_for_inverse=*,
     )
+
+    @staticmethod
+    cdef dict to_dict_c(MarginAccount obj)
+
+    @staticmethod
+    cdef MarginAccount from_dict_c(dict values)

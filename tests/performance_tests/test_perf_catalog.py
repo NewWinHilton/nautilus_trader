@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,58 +13,115 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import shutil
-import tempfile
+import os
 
 import pytest
 
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
-from nautilus_trader.test_kit.performance import PerformanceHarness
-from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalogFile
+from nautilus_trader import PACKAGE_ROOT
+from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
+from nautilus_trader.model.data import capsule_to_list
+from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_quote_ticks_audusd
+from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_trade_ticks_ethusdt
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 
 
-@pytest.mark.skip(reason="update tests for new API")
-class TestBacktestEnginePerformance(PerformanceHarness):
-    @staticmethod
-    def test_load_quote_ticks_python(benchmark):
-        tempdir = tempfile.mkdtemp()
+@pytest.mark.skip
+@pytest.mark.benchmark(min_rounds=1)
+def test_write_quote_ticks(benchmark, tmp_path) -> None:
+    catalog = setup_catalog("file", path=tmp_path / "catalog")
 
-        def setup():
-            # Arrange
-            cls = TestPersistenceCatalogFile()
+    def run():
+        load_catalog_with_stub_quote_ticks_audusd(catalog)
+        quotes = catalog.quote_ticks()
+        assert len(quotes) == 100_000
 
-            cls.catalog = data_catalog_setup(protocol="file", path=tempdir)
+    benchmark(run)
 
-            cls._load_quote_ticks_into_catalog()
 
-            # Act
-            return (cls.catalog,), {}
+@pytest.mark.skip
+@pytest.mark.benchmark(min_rounds=1)
+def test_load_quote_ticks(benchmark, tmp_path) -> None:
+    catalog = setup_catalog("file", path=tmp_path / "catalog")
+    load_catalog_with_stub_quote_ticks_audusd(catalog)
 
-        def run(catalog):
-            quotes = catalog.quote_ticks(as_nautilus=True)
-            assert len(quotes) == 9500
+    def run():
+        quotes = catalog.quote_ticks()
+        assert len(quotes) == 100_000
 
-        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
-        shutil.rmtree(tempdir)
+    benchmark(run)
 
-    @staticmethod
-    def test_load_quote_ticks_rust(benchmark):
-        tempdir = tempfile.mkdtemp()
 
-        def setup():
-            # Arrange
-            cls = TestPersistenceCatalogFile()
+@pytest.mark.skip
+@pytest.mark.benchmark(min_rounds=1)
+def test_write_trade_ticks(benchmark, tmp_path) -> None:
+    catalog = setup_catalog("file", path=tmp_path / "catalog")
 
-            cls.catalog = data_catalog_setup(protocol="file", path=tempdir)
+    def run():
+        load_catalog_with_stub_trade_ticks_ethusdt(catalog)
+        trades = catalog.trade_ticks()
+        assert len(trades) == 69_806
 
-            cls._load_quote_ticks_into_catalog(use_rust=True)
+    benchmark(run)
 
-            # Act
-            return (cls.catalog,), {}
 
-        def run(catalog):
-            quotes = catalog.quote_ticks(as_nautilus=True, use_rust=True)
-            assert len(quotes) == 9500
+@pytest.mark.skip
+@pytest.mark.benchmark(min_rounds=1)
+def test_load_trade_ticks(benchmark, tmp_path) -> None:
+    catalog = setup_catalog("file", path=tmp_path / "catalog")
+    load_catalog_with_stub_trade_ticks_ethusdt(catalog)
 
-        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
-        shutil.rmtree(tempdir)
+    def run():
+        trades = catalog.trade_ticks()
+        assert len(trades) == 69_806
+
+    benchmark(run)
+
+
+@pytest.mark.skip(reason="development_only")
+def test_load_single_stream(benchmark) -> None:
+    file_path = PACKAGE_ROOT / "bench_data" / "quotes_0005.parquet"
+    session = DataBackendSession()
+    session.add_file(
+        NautilusDataType.QuoteTick,
+        "quote_ticks",
+        str(file_path),
+    )
+
+    def run(result):
+        count = 0
+        for chunk in result:
+            count += len(capsule_to_list(chunk))
+
+        assert count == 9_689_614
+
+    benchmark(run)
+
+
+@pytest.mark.skip(reason="development_only")
+def test_load_multi_stream_catalog_v2(benchmark) -> None:
+    dir_path = PACKAGE_ROOT / "bench_data" / "multi_stream_data/"
+
+    session = DataBackendSession()
+
+    for dirpath, _, filenames in os.walk(dir_path):
+        for filename in filenames:
+            if filename.endswith("parquet"):
+                file_stem = os.path.splitext(filename)[0]
+                if "quotes" in filename:
+                    full_path = os.path.join(dirpath, filename)
+                    session.add_file(NautilusDataType.QuoteTick, file_stem, full_path)
+                elif "trades" in filename:
+                    full_path = os.path.join(dirpath, filename)
+                    session.add_file(NautilusDataType.TradeTick, file_stem, full_path)
+
+    def run(result):
+        count = 0
+        for chunk in result:
+            ticks = capsule_to_list(chunk)
+            count += len(ticks)
+
+        # Check total count is correct
+        assert count == 72_536_038
+
+    benchmark(run)

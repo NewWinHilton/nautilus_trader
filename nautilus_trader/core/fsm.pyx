@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -105,7 +105,7 @@ cdef class FiniteStateMachine:
         """
         return self.state_string_c()
 
-    cpdef void trigger(self, int trigger) except *:
+    cpdef void trigger(self, int trigger):
         """
         Process the FSM with the given trigger. The trigger must be valid for
         the FSMs current state.

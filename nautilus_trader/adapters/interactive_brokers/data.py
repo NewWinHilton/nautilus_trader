@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,517 +12,763 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
-from functools import partial
-from typing import Callable, Optional
 
-import ib_insync
 import pandas as pd
-from ib_insync import BarDataList
-from ib_insync import Contract
-from ib_insync import ContractDetails
-from ib_insync import RealTimeBar
-from ib_insync import RealTimeBarList
-from ib_insync import Ticker
-from ib_insync.ticker import nan
 
+from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
-from nautilus_trader.adapters.interactive_brokers.common import ContractId
-from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
-from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
-from nautilus_trader.adapters.interactive_brokers.parsing.data import parse_bar_data
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
 )
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import time_object_to_dt
+from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestInstrument
+from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestQuoteTicks
+from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstrumentClose
+from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstrumentClose
+from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the InteractiveBrokers exchange.
+    Provides a data client for the InteractiveBrokers exchange by using the `Gateway` to
+    stream market data.
 
     Parameters
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    client : IB
-        The ib_insync IB client.
+    client : InteractiveBrokersClient
+        The nautilus InteractiveBrokersClient using ibapi.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     instrument_provider : InteractiveBrokersInstrumentProvider
         The instrument provider.
-    handle_revised_bars : bool
-        If DataClient will emit bar updates as soon new bar opens.
+    ibg_client_id : int
+        Client ID used to connect TWS/Gateway.
+    config : InteractiveBrokersDataClientConfig
+        Configuration for the client.
+    name : str, optional
+        The custom client ID.
+
     """
 
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        client: ib_insync.IB,
+        client: InteractiveBrokersClient,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InteractiveBrokersInstrumentProvider,
-        handle_revised_bars: bool,
-    ):
+        ibg_client_id: int,
+        config: InteractiveBrokersDataClientConfig,
+        name: str | None = None,
+        connection_timeout: int = 300,
+        request_timeout: int = 60,
+    ) -> None:
         super().__init__(
             loop=loop,
-            client_id=ClientId(IB_VENUE.value),
+            client_id=ClientId(name or f"{IB_VENUE.value}-{ibg_client_id:03d}"),
             venue=None,
-            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
-            config={"name": "InteractiveBrokersDataClient"},
+            instrument_provider=instrument_provider,
+            config=config,
         )
-
+        self._connection_timeout = connection_timeout
+        self._request_timeout = request_timeout
         self._client = client
-        self._handle_revised_bars = handle_revised_bars
-        self._tickers: dict[ContractId, list[Ticker]] = defaultdict(list)
-        self._last_bar_time: pd.Timestamp = pd.Timestamp("1970-01-01", tz="UTC")
-
-        # Tasks
-        self._watch_dog_task: Optional[asyncio.Task] = None
-
-        # Event hooks
-        self._client.errorEvent += self._on_error_event
+        self._handle_revised_bars = config.handle_revised_bars
+        self._use_regular_trading_hours = config.use_regular_trading_hours
+        self._market_data_type = config.market_data_type
+        self._ignore_quote_tick_size_updates = config.ignore_quote_tick_size_updates
 
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
         return self._instrument_provider  # type: ignore
 
     async def _connect(self):
-        if not self._client.isConnected():
-            await self._client.connect()
+        # Connect client
+        await self._client.wait_until_ready(self._connection_timeout)
+        self._client.registered_nautilus_clients.add(self.id)
 
-        # Create long running tasks
-        self._watch_dog_task = self.create_task(self._watch_dog())
+        # Set instrument provider on client for price magnifier access
+        self._client._instrument_provider = self._instrument_provider
+
+        # Set Market Data Type
+        await self._client.set_market_data_type(self._market_data_type)
 
         # Load instruments based on config
         await self.instrument_provider.initialize()
-        for instrument in self.instrument_provider.get_all().values():
+        for instrument in self._instrument_provider.list_all():
             self._handle_data(instrument)
 
     async def _disconnect(self):
-        if self._client.isConnected():
-            self._client.disconnect()
+        self._client.registered_nautilus_clients.discard(self.id)
 
-        # Cancel tasks
-        if self._watch_dog_task:
-            self._log.debug("Canceling `watch_dog` task...")
-            self._watch_dog_task.cancel()
-            self._watch_dog_task.done()
+        if self._client.is_running and self._client.registered_nautilus_clients == set():
+            self._client.stop()
 
-    async def _watch_dog(self):
-        try:
-            while True:
-                await asyncio.sleep(5)
-                if not self._client.isConnected():
-                    try:
+    async def _subscribe(self, command: SubscribeData) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_subscribe` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_subscribe_instruments` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_subscribe_instrument` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        if command.book_type == BookType.L3_MBO:
+            self._log.error(
+                "Cannot subscribe to order book deltas: "
+                "L3_MBO data is not published by Interactive Brokers. "
+                "Valid book types are L1_MBP, L2_MBP",
+            )
+            return
+
+        if not (instrument := self._cache.instrument(command.instrument_id)):
+            self._log.error(
+                f"Cannot subscribe to order book deltas for {command.instrument_id}: instrument not found",
+            )
+            return
+
+        depth = 20 if not command.depth else command.depth
+        is_smart_depth = command.params.get("is_smart_depth", True)
+
+        await self._client.subscribe_order_book(
+            instrument_id=command.instrument_id,
+            contract=IBContract(**instrument.info["contract"]),
+            depth=depth,
+            is_smart_depth=is_smart_depth,
+        )
+
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        contract = self.instrument_provider.contract.get(command.instrument_id)
+        if not contract:
+            self._log.error(
+                f"Cannot subscribe to quotes for {command.instrument_id}: instrument not found",
+            )
+            return
+
+        # Use batch_quotes by default to avoid "Max number of tick-by-tick requests has been reached" error
+        batch_quotes = command.params.get("batch_quotes", True)
+        if contract.secType == "BAG" or batch_quotes:
+            # For OptionSpread (BAG) instruments, always use reqMktData instead of reqTickByTickData
+            # as not supported for BAG contracts
+            await self._client.subscribe_market_data(
+                instrument_id=command.instrument_id,
+                contract=contract,
+                generic_tick_list="",  # Empty for basic bid/ask data
+            )
+        else:
+            await self._client.subscribe_ticks(
+                instrument_id=command.instrument_id,
+                contract=contract,
+                tick_type="BidAsk",
+                ignore_size=self._ignore_quote_tick_size_updates,
+            )
+
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        if not (instrument := self._cache.instrument(command.instrument_id)):
+            self._log.error(
+                f"Cannot subscribe to trades for {command.instrument_id}: instrument not found",
+            )
+            return
+
+        if isinstance(instrument, CurrencyPair):
+            self._log.error(
+                "Interactive Brokers does not support trades for CurrencyPair instruments",
+            )
+            return
+
+        await self._client.subscribe_ticks(
+            instrument_id=command.instrument_id,
+            contract=IBContract(**instrument.info["contract"]),
+            tick_type="AllLast",
+            ignore_size=self._ignore_quote_tick_size_updates,
+        )
+
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        contract = self.instrument_provider.contract.get(command.bar_type.instrument_id)
+
+        if not contract:
+            self._log.error(
+                f"Cannot subscribe to bars for {command.bar_type.instrument_id}: instrument not found",
+            )
+            return
+
+        if command.bar_type.spec.timedelta.total_seconds() == 5:
+            await self._client.subscribe_realtime_bars(
+                bar_type=command.bar_type,
+                contract=contract,
+                use_rth=self._use_regular_trading_hours,
+            )
+        else:
+            await self._client.subscribe_historical_bars(
+                bar_type=command.bar_type,
+                contract=contract,
+                use_rth=self._use_regular_trading_hours,
+                handle_revised_bars=self._handle_revised_bars,
+                params=command.params.copy(),
+            )
+
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
+        pass  # Subscribed as part of orderbook
+
+    async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
+        pass  # Subscribed as part of orderbook
+
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_unsubscribe` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_unsubscribe_instruments` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_unsubscribe_instrument` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        is_smart_depth = command.params.get("is_smart_depth", True)
+        await self._client.unsubscribe_order_book(
+            instrument_id=command.instrument_id,
+            is_smart_depth=is_smart_depth,
+        )
+
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        await self._client.unsubscribe_ticks(command.instrument_id, "BidAsk")
+
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        await self._client.unsubscribe_ticks(command.instrument_id, "AllLast")
+
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        if command.bar_type.spec.timedelta == 5:
+            await self._client.unsubscribe_realtime_bars(command.bar_type)
+        else:
+            await self._client.unsubscribe_historical_bars(command.bar_type)
+
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
+        pass  # Subscribed as part of orderbook
+
+    async def _unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None:
+        pass  # Subscribed as part of orderbook
+
+    async def _request(self, request: RequestData) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_request` coroutine",  # pragma: no cover
+        )
+
+    async def _request_instrument(self, request: RequestInstrument) -> None:
+        if request.start is not None:
+            self._log.warning(
+                f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
+            )
+
+        if request.end is not None:
+            self._log.warning(
+                f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
+            )
+
+        await self.instrument_provider.load_with_return_async(
+            request.instrument_id,
+            request.params,
+        )
+
+        if instrument := self.instrument_provider.find(request.instrument_id):
+            self._handle_data(instrument)
+        else:
+            self._log.warning(f"Instrument for {request.instrument_id} not available")
+            return
+
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
+
+    async def _request_instruments(self, request: RequestInstruments) -> None:
+        loaded_instrument_ids: list[InstrumentId] = []
+
+        if "ib_contracts" in request.params:
+            # We allow to pass IBContract parameters to build futures or option chains
+            ib_contracts = [IBContract(**d) for d in request.params["ib_contracts"]]
+            loaded_instrument_ids = await self.instrument_provider.load_ids_with_return_async(
+                ib_contracts,
+                request.params,
+            )
+            loaded_instruments: list[Instrument] = []
+
+            if loaded_instrument_ids:
+                for instrument_id in loaded_instrument_ids:
+                    instrument = self._cache.instrument(instrument_id)
+
+                    if instrument:
+                        loaded_instruments.append(instrument)
+                    else:
                         self._log.warning(
-                            "IB Gateway disconnected. Trying to reconnect clientId {id} on {host}:{port}".format(
-                                id=self._client.client.clientId,
-                                host=self._client.client.host,
-                                port=self._client.client.port,
-                            ),
+                            f"Instrument {instrument_id} not found in cache after loading",
                         )
-                        await self._client.connectAsync(
-                            host=self._client.client.host,
-                            port=self._client.client.port,
-                            clientId=self._client.client.clientId,
-                            timeout=30,
-                        )
-                        self._resubscribe_on_reset()
-                    except Exception as e:
-                        self._log.info(f"{repr(e)}")
-        except asyncio.CancelledError:
-            self._log.debug("`watch_dog` task was canceled.")
-
-    async def _subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int = 5,
-        kwargs: Optional[dict] = None,
-    ):
-        if book_type == BookType.L1_TBBO:
-            return self._request_top_of_book(instrument_id=instrument_id)
-        elif book_type == BookType.L2_MBP:
-            if depth == 0:
-                depth = (
-                    5  # depth = 0 is default for Nautilus, but not handled by Interactive Brokers
-                )
-            return self._request_market_depth(
-                instrument_id=instrument_id,
-                handler=self._on_order_book_snapshot,
-                depth=depth,
-            )
-        else:
-            raise NotImplementedError("L3 orderbook not available for Interactive Brokers")
-
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int = 5,
-        kwargs: Optional[dict] = None,
-    ):
-        raise NotImplementedError("Orderbook deltas not implemented for Interactive Brokers (yet)")
-
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId):
-        contract_details: ContractDetails = self.instrument_provider.contract_details[
-            instrument_id.value
-        ]
-        ticker = self._client.reqMktData(
-            contract=contract_details.contract,
-        )
-        ticker.updateEvent += self._on_trade_ticker_update
-        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
-
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId):
-        contract_details: ContractDetails = self.instrument_provider.contract_details[
-            instrument_id.value
-        ]
-        ticker = self._client.reqMktData(
-            contract=contract_details.contract,
-        )
-        ticker.updateEvent += partial(
-            self._on_quote_tick_update,
-            contract=contract_details.contract,
-        )
-        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
-
-    async def _subscribe_bars(self, bar_type: BarType):
-        price_type: PriceType = bar_type.spec.price_type
-        contract_details: ContractDetails = self.instrument_provider.contract_details[
-            bar_type.instrument_id.value
-        ]
-
-        what_to_show = {
-            PriceType.ASK: "ASK",
-            PriceType.BID: "BID",
-            PriceType.LAST: "TRADES",
-            PriceType.MID: "MIDPOINT",
-        }
-
-        realtime_request, bar_size_setting = bar_spec_to_bar_size(bar_type.spec)
-        if realtime_request:
-            bar_list: RealTimeBarList = self._client.reqRealTimeBars(
-                contract=contract_details.contract,
-                barSize=bar_type.spec.step,
-                whatToShow=what_to_show[price_type],
-                useRTH=False,
-            )
-            bar_list.bar_type = bar_type
-            bar_list.instrument = self.instrument_provider.find(bar_type.instrument_id)
-
-            bar_list.updateEvent += partial(self._on_bar_update, bar_type=bar_type)
-        else:
-            last_bar: Bar = self._cache.bar(bar_type)
-            if last_bar is None:
-                duration = pd.Timedelta(
-                    bar_type.spec.timedelta.total_seconds() * self._cache.bar_capacity,
-                    "sec",
-                )
             else:
-                duration = pd.Timedelta(
-                    self._clock.timestamp_ns() - last_bar.ts_event,
-                    "ns",
-                )
-            bar_data_list: BarDataList = await self._client.reqHistoricalDataAsync(
-                contract=contract_details.contract,
-                endDateTime="",
-                durationStr=timedelta_to_duration_str(duration),
-                barSizeSetting=bar_size_setting,
-                whatToShow=what_to_show[bar_type.spec.price_type],
-                useRTH=True if contract_details.contract.secType == "STK" else False,
-                formatDate=2,
-                keepUpToDate=True,
+                self._log.warning("No instrument IDs were returned from load_ids_async")
+
+            self._handle_instruments(
+                venue=request.venue,
+                instruments=loaded_instruments,
+                correlation_id=request.id,
+                start=request.start,
+                end=request.end,
+                params=request.params,
             )
-            bar_data_list.bar_type = bar_type
-            bar_data_list.instrument = self.instrument_provider.find(bar_type.instrument_id)
+            return
 
-            self._on_historical_bar_update(
-                bar_data_list=bar_data_list,
-                has_new_bar=True,
-                process_all=True,
+        # We ensure existing instruments in the cache have their IB representations loaded as well in the adapter
+        instruments = self._cache.instruments()
+        instrument_ids = [instrument.id for instrument in instruments]
+        loaded_instrument_ids = await self.instrument_provider.load_ids_with_return_async(
+            instrument_ids,
+            request.params,
+        )
+        self._handle_instruments(
+            venue=request.venue,
+            instruments=[],
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
+        )
+
+    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
+        if not (instrument := self._cache.instrument(request.instrument_id)):
+            self._log.error(
+                f"Cannot request quotes for {request.instrument_id}, instrument not found",
             )
-            bar_data_list.updateEvent += partial(self._on_historical_bar_update)
+            return
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        contract_details: ContractDetails = self.instrument_provider.contract_details[
-            instrument_id.value
-        ]
-        self._client.cancelMktData(contract_details.contract)
+        end = request.end if request.end else pd.Timestamp.utcnow()
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        contract_details: ContractDetails = self.instrument_provider.contract_details[
-            instrument_id.value
-        ]
-        self._client.cancelMktData(contract_details.contract)
+        ticks = await self.get_historical_ticks_paged(
+            instrument_id=request.instrument_id,
+            contract=IBContract(**instrument.info["contract"]),
+            tick_type="BID_ASK",
+            start_date_time=request.start,
+            end_date_time=end,
+            limit=request.limit,
+            use_rth=self._use_regular_trading_hours,
+            timeout=self._request_timeout,
+        )
+        if not ticks:
+            self._log.warning(f"No quote tick data received for {request.instrument_id}")
+            return
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
-        for bars_list in self._client.wrapper.reqId2Subscriber.values():
-            self._log.debug(f"Trying to unsubscribe {bars_list.contract}, reqId: {bars_list.reqId}")
-            if getattr(bars_list, "bar_type", None) == bar_type:
-                if isinstance(bars_list, RealTimeBarList):
-                    self._client.cancelRealTimeBars(bars_list)
-                elif isinstance(bars_list, BarDataList):
-                    self._client.cancelHistoricalData(bars_list)
+        self._handle_quote_ticks(
+            request.instrument_id,
+            ticks,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
+        if not (instrument := self._cache.instrument(request.instrument_id)):
+            self._log.error(
+                f"Cannot request trades for {request.instrument_id}: instrument not found",
+            )
+            return
+
+        if isinstance(instrument, CurrencyPair):
+            self._log.error(
+                "Interactive Brokers does not support trades for CurrencyPair instruments",
+            )
+            return
+
+        end = request.end if request.end else pd.Timestamp.utcnow()
+
+        ticks = await self.get_historical_ticks_paged(
+            instrument_id=request.instrument_id,
+            contract=IBContract(**instrument.info["contract"]),
+            tick_type="TRADES",
+            start_date_time=request.start,
+            end_date_time=end,
+            limit=request.limit,
+            use_rth=self._use_regular_trading_hours,
+            timeout=self._request_timeout,
+        )
+        if not ticks:
+            self._log.warning(f"No trades received for {request.instrument_id}")
+            return
+
+        self._handle_trade_ticks(
+            request.instrument_id,
+            ticks,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def get_historical_ticks_paged(
+        self,
+        instrument_id: InstrumentId,
+        contract: IBContract,
+        tick_type: str,
+        start_date_time: pd.Timestamp,
+        end_date_time: pd.Timestamp,
+        use_rth: bool = True,
+        timeout: int = 60,
+        limit: int = 0,
+    ) -> list[TradeTick | QuoteTick]:
+        """
+        Retrieve historical ticks using pagination to handle large time ranges.
+
+        This method iterates backward from the end_date_time, requesting batches of ticks
+        until the start_date_time is reached or the limit is satisfied.
+
+        When both a time range and limit are specified, the method will stop when either
+        the start_date_time is reached or the limit is satisfied, whichever comes first.
+        If a limit is specified without a start_date_time boundary, pagination will
+        continue until the limit is reached or no more data is available.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to retrieve ticks.
+        contract : IBContract
+            The Interactive Brokers contract details for the instrument.
+        tick_type : str
+            The type of ticks to retrieve ("TRADES" or "BID_ASK").
+        start_date_time : pd.Timestamp
+            The start date time for the ticks.
+        end_date_time : pd.Timestamp
+            The end date time for the ticks.
+        limit : int, default 0
+            Maximum number of ticks to retrieve. If 0, no limit is applied.
+        use_rth : bool, default True
+            Whether to use regular trading hours.
+        timeout : int, default 60
+             The timeout (seconds) for each individual request.
+
+        Returns
+        -------
+        list[TradeTick | QuoteTick]
+            A list of aggregated ticks sorted by initialization timestamp, filtered to
+            the requested time range and limited to the specified count if provided.
+
+        """
+        data: list[TradeTick | QuoteTick] = []
+
+        # Ensure UTC
+        start_date_time = time_object_to_dt(start_date_time)
+        current_end_date_time = time_object_to_dt(end_date_time)
+        start_date_time_nanos = dt_to_unix_nanos(start_date_time)
+        end_date_time_nanos = dt_to_unix_nanos(end_date_time)
+
+        # Use 1 millisecond decrement to avoid duplicate/skipped ticks in high-frequency data
+        TIMESTAMP_DECREMENT_NS = 1_000_000
+
+        await self._client.wait_until_ready()
+
+        while current_end_date_time > start_date_time and (limit == 0 or len(data) < limit):
+            self._log.info(
+                f"{instrument_id}: Requesting {tick_type} ticks ending at {current_end_date_time}",
+            )
+
+            ticks = await self._client.get_historical_ticks(
+                instrument_id=instrument_id,
+                contract=contract,
+                tick_type=tick_type,
+                end_date_time=current_end_date_time,
+                use_rth=use_rth,
+                timeout=timeout,
+            )
+
+            # Break early if no ticks returned (reached beginning of available data)
+            if not ticks:
                 break
 
-    def _request_top_of_book(self, instrument_id: InstrumentId):
-        contract_details: ContractDetails = self.instrument_provider.contract_details[
-            instrument_id.value
-        ]
-        ticker = self._client.reqTickByTickData(
-            contract=contract_details.contract,
-            tickType="BidAsk",
-        )
-        ticker.updateEvent += self._on_top_level_snapshot
-        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
-
-    def _request_market_depth(self, instrument_id: InstrumentId, handler: Callable, depth: int = 5):
-        contract_details: ContractDetails = self.instrument_provider.contract_details[
-            instrument_id.value
-        ]
-        ticker = self._client.reqMktDepth(
-            contract=contract_details.contract,
-            numRows=depth,
-        )
-        ticker.updateEvent += handler
-        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
-
-    # def _on_order_book_delta(self, ticker: Ticker):
-    #     instrument_id = self.instrument_provider.contract_id_to_instrument_id[
-    #         ticker.contract.conId
-    #     ]
-    #     for depth in ticker.domTicks:
-    #         update = OrderBookDelta(
-    #             instrument_id=instrument_id,
-    #             book_type=BookType.L2_MBP,
-    #             action=MKT_DEPTH_OPERATIONS[depth.operation],
-    #             order=Order(
-    #                 price=Price.from_str(str(depth.price)),
-    #                 size=Quantity.from_str(str(depth.size)),
-    #                 side=IB_SIDE[depth.side],
-    #             ),
-    #             ts_event=dt_to_unix_nanos(depth.time),
-    #             ts_init=self._clock.timestamp_ns(),
-    #         )
-    #         self._handle_data(update)
-
-    def _on_quote_tick_update(self, tick: Ticker, contract: Contract):
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[contract.conId]
-        instrument = self.instrument_provider.find(instrument_id)
-        ts_init = self._clock.timestamp_ns()
-        ts_event = min(dt_to_unix_nanos(tick.time), ts_init)
-        quote_tick = QuoteTick(
-            instrument_id=instrument_id,
-            bid=Price(
-                value=tick.bid if tick.bid not in (None, nan) else 0,
-                precision=instrument.price_precision,
-            ),
-            bid_size=Quantity(
-                value=tick.bidSize if tick.bidSize not in (None, nan) else 0,
-                precision=instrument.size_precision,
-            ),
-            ask=Price(
-                value=tick.ask if tick.ask not in (None, nan) else 0,
-                precision=instrument.price_precision,
-            ),
-            ask_size=Quantity(
-                value=tick.askSize if tick.askSize not in (None, nan) else 0,
-                precision=instrument.size_precision,
-            ),
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-        self._handle_data(quote_tick)
-
-    def _on_top_level_snapshot(self, ticker: Ticker):
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
-        ts_init = self._clock.timestamp_ns()
-        ts_event = min(dt_to_unix_nanos(ticker.time), ts_init)
-        snapshot = OrderBookSnapshot(
-            book_type=BookType.L1_TBBO,
-            instrument_id=instrument_id,
-            bids=[(ticker.bid, ticker.bidSize)],
-            asks=[(ticker.ask, ticker.askSize)],
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-        self._handle_data(snapshot)
-
-    def _on_order_book_snapshot(self, ticker: Ticker, book_type: BookType = BookType.L2_MBP):
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
-        ts_init = self._clock.timestamp_ns()
-        ts_event = min(dt_to_unix_nanos(ticker.time), ts_init)
-        if not (ticker.domBids or ticker.domAsks):
-            return
-        snapshot = OrderBookSnapshot(
-            book_type=book_type,
-            instrument_id=instrument_id,
-            bids=[(level.price, level.size) for level in ticker.domBids],
-            asks=[(level.price, level.size) for level in ticker.domAsks],
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-        self._handle_data(snapshot)
-
-    def _on_trade_ticker_update(self, ticker: Ticker):
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
-        instrument = self.instrument_provider.find(instrument_id)
-        for tick in ticker.ticks:
-            ts_init = self._clock.timestamp_ns()
-            ts_event = min(dt_to_unix_nanos(tick.time), ts_init)
-            update = TradeTick(
-                instrument_id=instrument_id,
-                price=Price(tick.price, precision=instrument.price_precision),
-                size=Quantity(tick.size, precision=instrument.size_precision),
-                aggressor_side=AggressorSide.NO_AGGRESSOR,
-                trade_id=generate_trade_id(
-                    ts_event=ts_event,
-                    price=tick.price,
-                    size=tick.size,
-                ),
-                ts_event=ts_event,
-                ts_init=ts_init,
+            self._log.info(
+                f"{instrument_id}: Number of {tick_type} ticks retrieved in batch: {len(ticks)}",
             )
-            self._handle_data(update)
 
-    def _on_bar_update(
+            # Filter ticks to ensure they're within the requested time range
+            # When iterating backward, filter ticks before start_date_time
+            filtered_ticks = [
+                tick
+                for tick in ticks
+                if start_date_time_nanos <= tick.ts_init <= end_date_time_nanos
+            ]
+
+            if not filtered_ticks:
+                # No ticks in this batch are within range, break to avoid infinite loop
+                break
+
+            # Find minimum timestamp from filtered ticks
+            min_timestamp_nanos = min(tick.ts_init for tick in filtered_ticks)
+
+            # Update end_date_time to 1ms before the minimum timestamp to avoid duplicates
+            current_end_date_time = unix_nanos_to_dt(min_timestamp_nanos - TIMESTAMP_DECREMENT_NS)
+
+            data.extend(filtered_ticks)
+            self._log.info(f"Total number of {tick_type} ticks in data: {len(data)}")
+
+            # Break early if limit is reached
+            if limit > 0 and len(data) >= limit:
+                break
+
+        sorted_data = sorted(data, key=lambda x: x.ts_init)
+
+        # Apply limit if specified (trim to most recent ticks)
+        if limit > 0 and len(sorted_data) > limit:
+            sorted_data = sorted_data[-limit:]
+
+        return sorted_data
+
+    async def _request_bars(self, request: RequestBars) -> None:
+        contract = self.instrument_provider.contract.get(request.bar_type.instrument_id)
+        if not contract:
+            self._log.error(f"Cannot request {request.bar_type} bars: instrument not found")
+            return
+
+        if not request.bar_type.spec.is_time_aggregated():
+            self._log.error(
+                f"Cannot request {request.bar_type} bars: only time bars are aggregated by Interactive Brokers",
+            )
+            return
+
+        duration = request.end - request.start
+        duration_str = timedelta_to_duration_str(duration)
+        bars = await self.get_historical_bars_chunked(
+            bar_type=request.bar_type,
+            contract=contract,
+            start_date_time=request.start,
+            end_date_time=request.end,
+            duration=duration_str,
+            use_rth=self._use_regular_trading_hours,
+            timeout=self._request_timeout,
+        )
+
+        if bars:
+            bars = list(set(bars))
+            bars.sort(key=lambda x: x.ts_init)
+
+            # Apply limit if specified
+            limit = request.limit
+            if limit > 0 and len(bars) > limit:
+                bars = bars[-limit:]
+
+            self._handle_bars(
+                request.bar_type,
+                bars,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
+            status_msg = {"id": request.id, "status": "Success"}
+        else:
+            self._log.warning(f"No bar data received for {request.bar_type}")
+            status_msg = {"id": request.id, "status": "Failed"}
+
+        # Publish Status event
+        self._msgbus.publish(
+            topic=f"requests.{request.id}",
+            msg=status_msg,
+        )
+
+    async def get_historical_bars_chunked(
         self,
-        bars: list[RealTimeBar],
-        has_new_bar: bool,
         bar_type: BarType,
-    ):
-        if not has_new_bar:
-            return
+        contract: IBContract,
+        start_date_time: pd.Timestamp | None = None,
+        end_date_time: pd.Timestamp | None = None,
+        duration: str | None = None,
+        use_rth: bool = True,
+        timeout: int = 60,
+    ) -> list[Bar]:
+        """
+        Retrieve historical bars in chunks to handle large duration requests.
 
-        for bar in bars:
-            if bar.time <= self._last_bar_time:
-                continue
-            instrument = self._cache.instrument(bar_type.instrument_id)
-            ts_init = self._clock.timestamp_ns()
-            ts_event = min(dt_to_unix_nanos(bar.time), ts_init)
-            data = Bar(
-                bar_type=bar_type,
-                open=Price(bar.open_, instrument.price_precision),
-                high=Price(bar.high, instrument.price_precision),
-                low=Price(bar.low, instrument.price_precision),
-                close=Price(bar.close, instrument.price_precision),
-                volume=Quantity(max(0, bar.volume), instrument.size_precision),
-                ts_event=ts_event,
-                ts_init=ts_init,
+        This method breaks down a large historical data request into smaller segments
+        (years, days, seconds) to comply with IB API limits and avoid timeouts. It iterates
+        through these segments and aggregates the results.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The type of bar to retrieve.
+        contract : IBContract
+             The Interactive Brokers contract details for the instrument.
+        start_date_time : datetime.datetime
+             The start date time for the bars. If provided, duration is derived.
+        end_date_time : datetime.datetime
+             The end date time for the bars.
+        duration : str
+             The amount of time to go back from the end_date_time.
+        use_rth : bool, default True
+             Whether to use regular trading hours.
+        timeout : int, default 60
+             The timeout (seconds) for each individual request segment.
+
+        Returns
+        -------
+        list[Bar]
+             A list of aggregated Bar objects sorted by initialization timestamp.
+
+        """
+        # Adjust start and end time based on the timezone
+        if start_date_time:
+            start_date_time = time_object_to_dt(start_date_time)
+
+        if end_date_time:
+            end_date_time = time_object_to_dt(end_date_time)
+
+        data: list[Bar] = []
+
+        # We need to calculate duration segments based on start/end or duration
+        segments = self._calculate_duration_segments(
+            start_date_time,
+            end_date_time,
+            duration,
+        )
+
+        for segment_end_date_time, segment_duration in segments:
+            self._log.info(
+                f"{bar_type.instrument_id}: Requesting historical bars: {bar_type} ending on '{segment_end_date_time}' "
+                f"with duration '{segment_duration}'",
             )
-            self._handle_data(data)
-            self._last_bar_time = bar.time
 
-    def _on_historical_bar_update(
-        self,
-        bar_data_list: BarDataList,
-        has_new_bar: bool,
-        process_all: bool = False,
-    ) -> None:
-        if not process_all:
-            if self._handle_revised_bars:
-                bars = [bar_data_list[-1]]
-                is_revision = not has_new_bar
-            elif not self._handle_revised_bars and has_new_bar:
-                bars = [bar_data_list[-2]]
-                is_revision = False
+            bars = await self._client.get_historical_bars(  # Changed self.get_historical_bars to self._client.get_historical_bars
+                bar_type,
+                contract,
+                use_rth,
+                segment_end_date_time,
+                segment_duration,
+                timeout=timeout,
+            )
+            if bars:
+                self._log.info(
+                    f"{bar_type.instrument_id}: Number of bars retrieved in batch: {len(bars)}",
+                )
+                data.extend(bars)
+                self._log.info(f"Total number of bars in data: {len(data)}")
             else:
-                return
-        else:
-            bars = bar_data_list
-            is_revision = False
+                self._log.info(f"{bar_type.instrument_id}: No bars retrieved for: {bar_type}")
 
-        for bar in bars:
-            data = parse_bar_data(
-                bar=bar,
-                is_revision=is_revision,
-                bar_type=bar_data_list.bar_type,
-                instrument=bar_data_list.instrument,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._handle_data(data)
+        return sorted(data, key=lambda x: x.ts_init)
 
-    def _on_error_event(self, req_id, error_code, error_string, contract) -> None:
-        # Connectivity between IB and Trader Workstation has been restored
-        if error_code in (1101, 1102):
-            self._log.info(f"{error_code}: {error_string}")
-            self._resubscribe_on_reset()
-        else:
-            self._log.warning(f"{error_code}: {error_string}")
+    def _calculate_duration_segments(
+        self,
+        start_date: pd.Timestamp | None,
+        end_date: pd.Timestamp,
+        duration: str | None,
+    ) -> list[tuple[pd.Timestamp, str]]:
+        # Calculate the difference in years, days, and seconds between two dates for the
+        # purpose of requesting specific date ranges for historical bars.
+        #
+        # This function breaks down the time difference between two provided dates (start_date
+        # and end_date) into separate components: years, days, and seconds. It accounts for leap
+        # years in its calculation of years and considers detailed time components (hours, minutes,
+        # seconds) for precise calculation of seconds.
+        #
+        # Each component of the time difference (years, days, seconds) is represented as a
+        # tuple in the returned list.
+        # The first element is the date that indicates the end point of that time segment
+        # when moving from start_date to end_date. For example, if the function calculates 1
+        # year, the date for the year entry will be the end date after 1 year has passed
+        # from start_date. This helps in understanding the progression of time from start_date
+        # to end_date in segmented intervals.
 
-    def _resubscribe_on_reset(self) -> None:
-        self._handle_resubscribe_on_reset(
-            list(self.subscribed_order_book_deltas()),
-            self.subscribe_order_book_deltas,
-            self.unsubscribe_order_book_deltas,
+        if duration:
+            return [(end_date, duration)]
+
+        total_delta = end_date - start_date
+
+        # Calculate full years in the time delta
+        years = total_delta.days // 365
+        minus_years_date = end_date - pd.Timedelta(days=365 * years)
+
+        # Calculate remaining days after subtracting full years
+        days = (minus_years_date - start_date).days
+        minus_days_date = minus_years_date - pd.Timedelta(days=days)
+
+        # Calculate remaining time in seconds
+        delta = minus_days_date - start_date
+        subsecond = (
+            1
+            if delta.components.milliseconds > 0
+            or delta.components.microseconds > 0
+            or delta.components.nanoseconds > 0
+            else 0
         )
-        self._handle_resubscribe_on_reset(
-            list(self.subscribed_order_book_snapshots()),
-            self.subscribe_order_book_snapshots,
-            self.unsubscribe_order_book_snapshots,
-        )
-        self._handle_resubscribe_on_reset(
-            list(self.subscribed_tickers()),
-            self.subscribe_ticker,
-            self.unsubscribe_ticker,
-        )
-        self._handle_resubscribe_on_reset(
-            list(self.subscribed_quote_ticks()),
-            self.subscribe_quote_ticks,
-            self.unsubscribe_quote_ticks,
-        )
-        self._handle_resubscribe_on_reset(
-            list(self.subscribed_trade_ticks()),
-            self.subscribe_trade_ticks,
-            self.unsubscribe_trade_ticks,
-        )
-        self._handle_resubscribe_on_reset(
-            list(self.subscribed_bars()),
-            self.subscribe_bars,
-            self.unsubscribe_bars,
+        seconds = (
+            delta.components.hours * 3600
+            + delta.components.minutes * 60
+            + delta.components.seconds
+            + subsecond
         )
 
-    @staticmethod
-    def _handle_resubscribe_on_reset(
-        subscription: list,
-        subscriber: Callable,
-        unsubscriber: Callable,
-    ) -> None:
-        for instrument_id in subscription:
-            unsubscriber(instrument_id)
-        for instrument_id in subscription:
-            subscriber(instrument_id)
+        results = []
+
+        if years:
+            results.append((end_date, f"{years} Y"))
+
+        if days:
+            results.append((minus_years_date, f"{days} D"))
+
+        if seconds:
+            results.append((minus_days_date, f"{seconds} S"))
+
+        return results

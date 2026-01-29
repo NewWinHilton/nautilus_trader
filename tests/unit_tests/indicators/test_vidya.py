@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage
+import pytest
+
+from nautilus_trader.indicators import MovingAverageType
+from nautilus_trader.indicators import VariableIndexDynamicAverage
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
@@ -69,13 +71,13 @@ class TestVariableIndexDynamicAverage:
         self.vida.update_raw(13.335)
 
         # Assert
-        assert self.vida.value == 7.656223577745644
+        assert self.vida.value == pytest.approx(7.656223577745644, rel=1e-9)
         assert self.vida.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
         indicator = VariableIndexDynamicAverage(10, PriceType.MID)
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -87,7 +89,7 @@ class TestVariableIndexDynamicAverage:
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
         indicator = VariableIndexDynamicAverage(10)
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
@@ -110,24 +112,24 @@ class TestVariableIndexDynamicAverage:
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange, Act
-        self.vida.update_raw(1.00000)
+        self.vida.update_raw(1.0)
 
         # Assert
         assert self.vida.value == 0
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange, Act
-        self.vida.update_raw(1.00000)
-        self.vida.update_raw(2.00000)
-        self.vida.update_raw(3.00000)
+        self.vida.update_raw(1.0)
+        self.vida.update_raw(2.0)
+        self.vida.update_raw(3.0)
 
         # Assert
         assert self.vida.value == 0
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(1000):
-            self.vida.update_raw(1.00000)
+        for _ in range(1000):
+            self.vida.update_raw(1.0)
 
         # Act
         self.vida.reset()

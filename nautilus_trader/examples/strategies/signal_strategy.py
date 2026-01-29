@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,25 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.trading.strategy import Strategy
 
 
 # *** THIS IS A TEST STRATEGY ***
 
 
-class SignalStrategyConfig(StrategyConfig):
+class SignalStrategyConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``SignalStrategy`` instances.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+
     """
 
-    instrument_id: str
+    instrument_id: InstrumentId
 
 
 class SignalStrategy(Strategy):
@@ -42,26 +47,32 @@ class SignalStrategy(Strategy):
     ----------
     config : OrderbookImbalanceConfig
         The configuration for the instance.
+
     """
 
-    def __init__(self, config: SignalStrategyConfig):
+    def __init__(self, config: SignalStrategyConfig) -> None:
         super().__init__(config)
-        self.instrument_id = InstrumentId.from_str(self.config.instrument_id)
-        self.instrument: Optional[Instrument] = None
+        self.instrument: Instrument | None = None
         self.counter = 0
 
-    def on_start(self):
-        """Actions to be performed on strategy start."""
-        self.instrument = self.cache.instrument(self.instrument_id)
-        self.subscribe_trade_ticks(instrument_id=self.instrument_id)
-        self.subscribe_quote_ticks(instrument_id=self.instrument_id)
+    def on_start(self) -> None:
+        """
+        Actions to be performed on strategy start.
+        """
+        self.instrument = self.cache.instrument(self.config.instrument_id)
+        self.subscribe_trade_ticks(instrument_id=self.config.instrument_id)
+        self.subscribe_quote_ticks(instrument_id=self.config.instrument_id)
 
-    def on_quote_tick(self, tick: QuoteTick):
-        """Actions to be performed when the strategy is running and receives a quote tick."""
+    def on_quote_tick(self, tick: QuoteTick) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a quote tick.
+        """
         self.counter += 1
         self.publish_signal(name="counter", value=self.counter, ts_event=tick.ts_event)
 
-    def on_trade_tick(self, tick: TradeTick):
-        """Actions to be performed when the strategy is running and receives a trade tick."""
+    def on_trade_tick(self, tick: TradeTick) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a trade tick.
+        """
         self.counter += 1
         self.publish_signal(name="counter", value=self.counter, ts_event=tick.ts_event)

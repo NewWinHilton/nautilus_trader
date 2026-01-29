@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,27 +20,29 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.test_kit.providers import TestDataProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
+        trader_id=TraderId("BACKTESTER-001"),
     )
 
     # Build the backtest engine
@@ -56,7 +58,6 @@ if __name__ == "__main__":
     # Create a fill model (optional)
     fill_model = FillModel(
         prob_fill_on_limit=0.2,
-        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )
@@ -71,6 +72,7 @@ if __name__ == "__main__":
         starting_balances=[Money(10_000_000, USD)],  # Single-currency or multi-currency accounts
         fill_model=fill_model,
         modules=[fx_rollover_interest],
+        bar_execution=True,  # If bar data should move the market (True by default)
     )
 
     # Add instruments
@@ -80,26 +82,26 @@ if __name__ == "__main__":
     # Add data
     wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
     ticks = wrangler.process_bar_data(
-        bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
-        ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
+        bid_data=provider.read_csv_bars("fxcm/gbpusd-m1-bid-2012.csv"),
+        ask_data=provider.read_csv_bars("fxcm/gbpusd-m1-ask-2012.csv"),
     )
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = VolatilityMarketMakerConfig(
-        instrument_id=str(GBPUSD_SIM.id),
-        bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
+    strategy_config = VolatilityMarketMakerConfig(
+        instrument_id=GBPUSD_SIM.id,
+        bar_type=BarType.from_str("GBP/USD.SIM-5-MINUTE-BID-INTERNAL"),
         atr_period=20,
         atr_multiple=3.0,
         trade_size=Decimal(500_000),
         emulation_trigger="NO_TRIGGER",
     )
     # Instantiate and add your strategy
-    strategy = VolatilityMarketMaker(config=config)
+    strategy = VolatilityMarketMaker(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)
-    input("Press Enter to continue...")  # noqa (always Python 3)
+    input("Press Enter to continue...")
 
     # Run the engine (from start to end of data)
     engine.run(end=datetime(2012, 2, 10))

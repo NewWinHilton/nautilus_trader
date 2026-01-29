@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.indicators.bollinger_bands import BollingerBands
+from nautilus_trader.indicators import BollingerBands
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
@@ -65,27 +65,27 @@ class TestBollingerBands:
         # Arrange
         indicator = BollingerBands(20, 2.0)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.middle == 1.0000200000000001
+        assert indicator.middle == 1.0
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
         indicator = BollingerBands(20, 2.0)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.middle == 1.00001
+        assert indicator.middle == 1.0
 
     def test_handle_bar_updates_indicator(self):
         # Arrange

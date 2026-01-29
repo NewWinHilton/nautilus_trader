@@ -8,6 +8,36 @@
    :member-order: bysource
 ```
 
+## Client
+
+```{eval-rst}
+.. automodule:: nautilus_trader.adapters.betfair.client
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Common
+
+```{eval-rst}
+.. automodule:: nautilus_trader.adapters.betfair.common
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Config
+
+```{eval-rst}
+.. automodule:: nautilus_trader.adapters.betfair.config
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ## Data
 
 ```{eval-rst}
@@ -48,10 +78,10 @@
    :member-order: bysource
 ```
 
-## Parsing
+## OrderBook
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.betfair.parsing
+.. automodule:: nautilus_trader.adapters.betfair.orderbook
    :show-inheritance:
    :inherited-members:
    :members:
@@ -72,16 +102,6 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.adapters.betfair.sockets
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Utility
-
-```{eval-rst}
-.. automodule:: nautilus_trader.adapters.betfair.util
    :show-inheritance:
    :inherited-members:
    :members:

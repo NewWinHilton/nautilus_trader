@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -24,7 +24,7 @@ cdef class IdentifierGenerator:
     cdef Clock _clock
     cdef str _id_tag_trader
 
-    cdef str _get_date_tag(self)
+    cdef str _get_datetime_tag(self)
 
 
 cdef class ClientOrderIdGenerator(IdentifierGenerator):
@@ -32,10 +32,14 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
     cdef readonly int count
     """The count of IDs generated.\n\n:returns: `int`"""
+    cdef readonly bint use_uuids
+    """If UUID4's should be used for client order ID values.\n\n:returns: `bool`"""
+    cdef readonly bint use_hyphens
+    """If hyphens should be used in generated client order ID values.\n\n:returns: `bool`"""
 
-    cpdef void set_count(self, int count) except *
+    cpdef void set_count(self, int count)
     cpdef ClientOrderId generate(self)
-    cpdef void reset(self) except *
+    cpdef void reset(self)
 
 
 cdef class OrderListIdGenerator(IdentifierGenerator):
@@ -44,15 +48,15 @@ cdef class OrderListIdGenerator(IdentifierGenerator):
     cdef readonly int count
     """The count of IDs generated.\n\n:returns: `int`"""
 
-    cpdef void set_count(self, int count) except *
+    cpdef void set_count(self, int count)
     cpdef OrderListId generate(self)
-    cpdef void reset(self) except *
+    cpdef void reset(self)
 
 
 cdef class PositionIdGenerator(IdentifierGenerator):
     cdef dict _counts
 
-    cpdef void set_count(self, StrategyId strategy_id, int count) except *
-    cpdef int get_count(self, StrategyId strategy_id) except *
+    cpdef void set_count(self, StrategyId strategy_id, int count)
+    cpdef int get_count(self, StrategyId strategy_id)
     cpdef PositionId generate(self, StrategyId strategy_id, bint flipped=*)
-    cpdef void reset(self) except *
+    cpdef void reset(self)

@@ -5,7 +5,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.external.core
+.. automodule:: nautilus_trader.persistence.catalog.base
    :show-inheritance:
    :inherited-members:
    :members:
@@ -13,7 +13,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.external.readers
+.. automodule:: nautilus_trader.persistence.catalog.parquet
    :show-inheritance:
    :inherited-members:
    :members:
@@ -21,7 +21,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.batching
+.. automodule:: nautilus_trader.persistence.wranglers
    :show-inheritance:
    :inherited-members:
    :members:
@@ -29,15 +29,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.catalog
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.persistence.streaming
+.. automodule:: nautilus_trader.persistence.writer
    :show-inheritance:
    :inherited-members:
    :members:

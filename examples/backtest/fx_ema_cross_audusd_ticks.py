@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,27 +19,29 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.test_kit.providers import TestDataProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
+        trader_id=TraderId("BACKTESTER-001"),
     )
 
     # Build the backtest engine
@@ -49,7 +51,6 @@ if __name__ == "__main__":
     # Create a fill model (optional)
     fill_model = FillModel(
         prob_fill_on_limit=0.2,
-        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )
@@ -79,23 +80,24 @@ if __name__ == "__main__":
 
     # Add data
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-    ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
+    ticks = wrangler.process(provider.read_csv_ticks("truefx/audusd-ticks.csv"))
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = EMACrossConfig(
-        instrument_id=str(AUDUSD_SIM.id),
-        bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
+    strategy_config = EMACrossConfig(
+        instrument_id=AUDUSD_SIM.id,
+        bar_type=BarType.from_str("AUD/USD.SIM-100-TICK-MID-INTERNAL"),
+        trade_size=Decimal(1_000_000),
         fast_ema_period=10,
         slow_ema_period=20,
-        trade_size=Decimal(1_000_000),
+        close_positions_on_stop=True,
     )
     # Instantiate and add your strategy
-    strategy = EMACross(config=config)
+    strategy = EMACross(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)
-    input("Press Enter to continue...")  # noqa (always Python 3)
+    input("Press Enter to continue...")
 
     # Run the engine (from start to end of data)
     engine.run()

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -40,7 +39,7 @@ cdef class PositionSizer:
     def __init__(self, Instrument instrument not None):
         self.instrument = instrument
 
-    cpdef void update_instrument(self, Instrument instrument) except *:
+    cpdef void update_instrument(self, Instrument instrument):
         """
         Update the internal instrument with the given instrument.
 
@@ -68,12 +67,12 @@ cdef class PositionSizer:
         risk: Decimal,
         commission_rate: Decimal = Decimal(0),
         exchange_rate: Decimal = Decimal(1),
-        hard_limit: Optional[Decimal] = None,
+        hard_limit: Decimal | None = None,
         unit_batch_size: Decimal = Decimal(1),
         int units=1,
     ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `calculate` must be implemented in the subclass")  # pragma: no cover
 
     cdef object _calculate_risk_ticks(self, Price entry, Price stop_loss):
         return abs(entry - stop_loss) / self.instrument.price_increment
@@ -113,7 +112,7 @@ cdef class FixedRiskSizer(PositionSizer):
         risk: Decimal,
         commission_rate: Decimal = Decimal(0),
         exchange_rate: Decimal = Decimal(1),
-        hard_limit: Optional[Decimal] = None,
+        hard_limit: Decimal | None = None,
         unit_batch_size: Decimal=Decimal(1),
         int units=1,
     ):
@@ -200,7 +199,13 @@ cdef class FixedRiskSizer(PositionSizer):
             # Round position size to nearest unit batch size
             position_size_batched = (position_size_batched // unit_batch_size) * unit_batch_size
 
-        # Limit size on max trade size
-        final_size: Decimal = min(position_size_batched, self.instrument.max_quantity)
+        # Limit size on max trade size (if configured)
+        if self.instrument.max_quantity is not None:
+            final_size: Decimal = min(
+                position_size_batched,
+                self.instrument.max_quantity.as_decimal(),
+            )
+        else:
+            final_size: Decimal = position_size_batched
 
-        return Quantity(final_size, precision=self.instrument.size_precision)
+        return self.instrument.make_qty(final_size)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
-from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -28,5 +28,12 @@ cdef class BettingAccount(CashAccount):
         OrderSide side,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=*,
+        bint use_quote_for_inverse=*,
     )
+
+
+cpdef stake(Quantity quantity, Price price)
+cpdef liability(Quantity quantity, Price price, OrderSide side)
+cpdef win_payoff(Quantity quantity, Price price, OrderSide side)
+cpdef lose_payoff(Quantity quantity, OrderSide side)
+cpdef exposure(Quantity quantity, Price price, OrderSide side)

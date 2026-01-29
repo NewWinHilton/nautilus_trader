@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,23 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestCommandStubs:
     @staticmethod
-    def submit_order_command(order: Order):
+    def submit_order_command(order: Order) -> SubmitOrder:
         return SubmitOrder(
             trader_id=TestIdStubs.trader_id(),
             strategy_id=TestIdStubs.strategy_id(),
@@ -40,14 +40,25 @@ class TestCommandStubs:
         )
 
     @staticmethod
+    def submit_order_list_command(order_list: OrderList) -> SubmitOrderList:
+        return SubmitOrderList(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            order_list=order_list,
+            position_id=TestIdStubs.position_id(),
+            command_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+
+    @staticmethod
     def modify_order_command(
-        price: Optional[Price] = None,
-        quantity: Optional[Quantity] = None,
-        instrument_id: Optional[InstrumentId] = None,
-        client_order_id: Optional[ClientOrderId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-        order: Optional[Order] = None,
-    ):
+        price: Price | None = None,
+        quantity: Quantity | None = None,
+        instrument_id: InstrumentId | None = None,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        order: Order | None = None,
+    ) -> ModifyOrder:
         assert price or quantity
         if order is not None:
             return ModifyOrder(
@@ -78,11 +89,11 @@ class TestCommandStubs:
 
     @staticmethod
     def cancel_order_command(
-        instrument_id: Optional[InstrumentId] = None,
-        client_order_id: Optional[ClientOrderId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-        order: Optional[Order] = None,
-    ):
+        instrument_id: InstrumentId | None = None,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        order: Order | None = None,
+    ) -> CancelOrder:
         if order is not None:
             return CancelOrder(
                 trader_id=order.trader_id,

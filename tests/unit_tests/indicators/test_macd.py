@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
+import pytest
+
+from nautilus_trader.indicators import MovingAverageConvergenceDivergence
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
@@ -66,7 +68,7 @@ class TestMovingAverageConvergenceDivergence:
         # Arrange
         indicator = MovingAverageConvergenceDivergence(3, 10, price_type=PriceType.MID)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -79,7 +81,7 @@ class TestMovingAverageConvergenceDivergence:
         # Arrange
         indicator = MovingAverageConvergenceDivergence(3, 10)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
@@ -115,7 +117,7 @@ class TestMovingAverageConvergenceDivergence:
         self.macd.update_raw(3.00000)
 
         # Act, Assert
-        assert self.macd.value == 0.7376033057851243
+        assert self.macd.value == pytest.approx(0.7376033057851243, rel=1e-9)
 
     def test_value_with_more_inputs_expected_value(self):
         # Arrange

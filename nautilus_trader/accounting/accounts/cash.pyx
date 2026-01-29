@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,20 +12,43 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+A cash account that cannot hold leveraged positions.
 
-from typing import Optional
+Balance locking
+---------------
+The account tracks locked balances per (InstrumentId, Currency) to support
+instruments that lock different currencies depending on order side:
 
+- BUY orders lock quote currency (cost of purchase).
+- SELL orders lock base currency (assets being sold).
+
+Callers must clear all existing locks via `clear_balance_locked` before applying
+new locks. This prevents stale currency entries when order compositions change.
+
+Graceful degradation
+--------------------
+When total locked exceeds total balance (e.g., due to venue/client state latency),
+the account clamps locked to total rather than raising an error. This yields zero
+free balance, preventing new orders while avoiding crashes in live trading.
+
+"""
+from decimal import Decimal
+
+from nautilus_trader.accounting.error import AccountBalanceNegative
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.enums_c cimport AccountType
-from nautilus_trader.model.enums_c cimport LiquiditySide
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport liquidity_side_to_str
+from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport MoneyRaw
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -42,11 +65,14 @@ cdef class CashAccount(Account):
         The initial account state event.
     calculate_account_state : bool, optional
         If the account state should be calculated from order fills.
+    allow_borrowing : bool, optional
+        If borrowing is allowed (negative balances).
 
     Raises
     ------
     ValueError
         If `event.account_type` is not equal to ``CASH``.
+
     """
     ACCOUNT_TYPE = AccountType.CASH  # required for BettingAccount subclass
 
@@ -54,17 +80,106 @@ cdef class CashAccount(Account):
         self,
         AccountState event,
         bint calculate_account_state = False,
+        bint allow_borrowing = False,
     ):
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, self.ACCOUNT_TYPE, "event.account_type", "account_type")
 
+        self.allow_borrowing = allow_borrowing
+
         super().__init__(event, calculate_account_state)
 
-        self._balances_locked: dict[InstrumentId, Money] = {}
+        self._balances_locked: dict[tuple[InstrumentId, Currency], Money] = {}
 
-    cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked) except *:
+    @staticmethod
+    cdef dict to_dict_c(CashAccount obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "CashAccount",
+            "calculate_account_state": obj.calculate_account_state,
+            "allow_borrowing": obj.allow_borrowing,
+            "events": [AccountState.to_dict_c(event) for event in obj.events_c()]
+        }
+
+    @staticmethod
+    def to_dict(CashAccount obj):
+        return CashAccount.to_dict_c(obj)
+
+
+    @staticmethod
+    cdef CashAccount from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        calculate_account_state = values["calculate_account_state"]
+        allow_borrowing = values.get("allow_borrowing", False)
+        events = values["events"]
+        if len(events) == 0:
+            return None
+        init_event = events[0]
+        other_events = events[1:]
+        account = CashAccount(
+            event=AccountState.from_dict_c(init_event),
+            calculate_account_state=calculate_account_state,
+            allow_borrowing=allow_borrowing
+        )
+        for event in other_events:
+            account.apply(AccountState.from_dict_c(event))
+        return account
+
+    @staticmethod
+    def from_dict(dict values):
+        return CashAccount.from_dict_c(values)
+
+    cpdef void update_balances(self, list balances):
         """
-        Update the balance locked for the given instrument ID.
+        Update the account balances.
+
+        There is no guarantee that every account currency is included in the
+        given balances, therefore we only update included balances.
+
+        Parameters
+        ----------
+        balances : list[AccountBalance]
+            The balances for the update.
+
+        Raises
+        ------
+        ValueError
+            If `balances` is empty.
+        AccountBalanceNegative
+            If borrowing is not allowed and balance is negative.
+
+        """
+        Condition.not_empty(balances, "balances")
+
+        cdef AccountBalance balance
+        for balance in balances:
+            if not self.allow_borrowing and balance.total._mem.raw < 0:
+                raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
+
+            self._balances[balance.currency] = balance
+
+    cpdef void apply(self, AccountState event):
+        """
+        Apply the given account event to the account.
+
+        Clears per-instrument locked balances since external state is authoritative.
+
+        Parameters
+        ----------
+        event : AccountState
+            The account event to apply.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        self._balances_locked.clear()
+        Account.apply(self, event)
+
+    cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked):
+        """
+        Update the balance locked for the given instrument ID and currency.
 
         Parameters
         ----------
@@ -76,7 +191,7 @@ cdef class CashAccount(Account):
         Raises
         ------
         ValueError
-            If `margin_init` is negative (< 0).
+            If `locked` is negative (< 0).
 
         Warnings
         --------
@@ -85,51 +200,91 @@ cdef class CashAccount(Account):
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(locked, "locked")
-        Condition.true(locked.raw_int64_c() >= 0, "locked was negative")
+        Condition.is_true(locked.raw_int_c() >= 0, f"locked was negative ({locked})")
 
-        self._balances_locked[instrument_id] = locked
-        self._recalculate_balance(locked.currency)
+        cdef Currency currency = locked.currency
 
-    cpdef void clear_balance_locked(self, InstrumentId instrument_id) except *:
+        self._balances_locked[(instrument_id, currency)] = locked
+        self._recalculate_balance(currency)
+
+    cpdef void clear_balance_locked(self, InstrumentId instrument_id):
         """
-        Clear the balance locked for the given instrument ID.
+        Clear all balances locked for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument for the locked balance to clear.
+            The instrument for which to clear all locked balances.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef Money locked = self._balances_locked.pop(instrument_id, None)
-        if locked is not None:
-            self._recalculate_balance(locked.currency)
+        cdef list[tuple[InstrumentId, Currency]] keys_to_remove = [
+            key for key in self._balances_locked.keys()
+            if key[0] == instrument_id
+        ]
+
+        cdef set[Currency] currencies_to_recalc = set()
+
+        for key in keys_to_remove:
+            currencies_to_recalc.add(key[1])
+            del self._balances_locked[key]
+
+        cdef Currency currency
+        for currency in currencies_to_recalc:
+            self._recalculate_balance(currency)
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
-    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id):
         return True
 
-    cdef void _recalculate_balance(self, Currency currency) except *:
+    cdef void _recalculate_balance(self, Currency currency):
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            # TODO(cs): Temporary pending reimplementation of accounting
+            # TODO: Temporary pending reimplementation of accounting
             print("Cannot recalculate balance when no current balance")
             return
 
-        cdef double total_locked = 0.0
+        cdef MoneyRaw total_raw = current_balance.total.raw_int_c()
+        cdef MoneyRaw locked_raw = 0
 
         cdef Money locked
         for locked in self._balances_locked.values():
             if locked.currency != currency:
                 continue
-            total_locked += locked.as_f64_c()
+            locked_raw += locked.raw_int_c()
+
+        # Calculate the free balance ensuring that it is never negative.
+        #
+        # In some edge-cases (for example, when an adapter temporarily reports
+        # an inflated locked amount due to latency or rounding differences)
+        # the calculated ``locked_raw`` can exceed the ``total_raw`` balance. This
+        # would normally propagate to the ``AccountBalance`` constructor where
+        # the internal correctness checks would raise – ultimately causing the
+        # entire application to terminate. That fail-fast behaviour is useful
+        # during development, but in live trading we prefer to degrade
+        # gracefully whilst ensuring that balances remain internally
+        # consistent.
+        #
+        # Therefore we clamp the locked amount to the total balance whenever it
+        # would otherwise exceed it. The resulting free balance is then zero –
+        # indicating that no funds are currently available for trading.
+        # Note: Only clamp when total is non-negative. When total is negative
+        # (borrowing enabled), keep locked as-is and allow free to be negative.
+        cdef MoneyRaw free_raw = total_raw - locked_raw
+
+        if free_raw < 0 and total_raw >= 0:
+            # Clamp the locked balance. We intentionally do not raise as this
+            # condition can occur transiently when the venue and client state
+            # are out-of-sync.
+            locked_raw = total_raw
+            free_raw = 0
 
         cdef AccountBalance new_balance = AccountBalance(
             current_balance.total,
-            Money(total_locked, currency),
-            Money(current_balance.total.as_f64_c() - total_locked, currency),
+            Money.from_raw_c(locked_raw, currency),
+            Money.from_raw_c(free_raw, currency),
         )
 
         self._balances[currency] = new_balance
@@ -140,7 +295,7 @@ cdef class CashAccount(Account):
         Quantity last_qty,
         Price last_px,
         LiquiditySide liquidity_side,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the commission generated from a transaction with the given
@@ -159,7 +314,7 @@ cdef class CashAccount(Account):
             The transaction price.
         liquidity_side : LiquiditySide {``MAKER``, ``TAKER``}
             The liquidity side for the transaction.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
 
         Returns
@@ -176,23 +331,22 @@ cdef class CashAccount(Account):
         Condition.not_none(last_qty, "last_qty")
         Condition.not_equal(liquidity_side, LiquiditySide.NO_LIQUIDITY_SIDE, "liquidity_side", "NO_LIQUIDITY_SIDE")
 
-        cdef double notional = instrument.notional_value(
+        notional = instrument.notional_value(
             quantity=last_qty,
             price=last_px,
-            inverse_as_quote=inverse_as_quote,
-        ).as_f64_c()
+            use_quote_for_inverse=use_quote_for_inverse,
+        ).as_decimal()
 
-        cdef double commission
         if liquidity_side == LiquiditySide.MAKER:
-            commission = notional * float(instrument.maker_fee)
+            commission = notional * instrument.maker_fee
         elif liquidity_side == LiquiditySide.TAKER:
-            commission = notional * float(instrument.taker_fee)
+            commission = notional * instrument.taker_fee
         else:
             raise ValueError(
                 f"invalid LiquiditySide, was {liquidity_side_to_str(liquidity_side)}"
             )
 
-        if instrument.is_inverse and not inverse_as_quote:
+        if instrument.is_inverse and not use_quote_for_inverse:
             return Money(commission, instrument.base_currency)
         else:
             return Money(commission, instrument.quote_currency)
@@ -203,7 +357,7 @@ cdef class CashAccount(Account):
         OrderSide side,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the locked balance.
@@ -221,7 +375,7 @@ cdef class CashAccount(Account):
             The order quantity.
         price : Price
             The order price.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
 
         Returns
@@ -236,42 +390,37 @@ cdef class CashAccount(Account):
         cdef Currency quote_currency = instrument.quote_currency
         cdef Currency base_currency = instrument.get_base_currency() or instrument.quote_currency
 
-        cdef double notional
         # Determine notional value
         if side == OrderSide.BUY:
             notional = instrument.notional_value(
                 quantity=quantity,
                 price=price,
-                inverse_as_quote=inverse_as_quote,
-            ).as_f64_c()
+                use_quote_for_inverse=use_quote_for_inverse,
+            ).as_decimal()
         elif side == OrderSide.SELL:
             if base_currency is not None:
-                notional = quantity.as_f64_c()
+                notional = quantity.as_decimal()
             else:
                 return None  # No balance to lock
-        else:
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
-        # Add expected commission
-        cdef double locked = notional
-        locked += (notional * float(instrument.taker_fee) * 2.0)
-
         # Handle inverse
-        if instrument.is_inverse and not inverse_as_quote:
-            return Money(locked, base_currency)
+        if instrument.is_inverse and not use_quote_for_inverse:
+            return Money(notional, base_currency)
 
         if side == OrderSide.BUY:
-            return Money(locked, quote_currency)
+            return Money(notional, quote_currency)
         elif side == OrderSide.SELL:
-            return Money(locked, base_currency)
-        else:
+            return Money(notional, base_currency)
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
         OrderFilled fill,
-        Position position: Optional[Position] = None,
+        Position position: Position | None = None,
     ):
         """
         Return the calculated PnL.
@@ -289,7 +438,7 @@ cdef class CashAccount(Account):
 
         Returns
         -------
-        list[Money] or ``None``
+        list[Money]
 
         """
         Condition.not_none(instrument, "instrument")
@@ -300,18 +449,44 @@ cdef class CashAccount(Account):
         cdef Currency quote_currency = instrument.quote_currency
         cdef Currency base_currency = instrument.get_base_currency()
 
-        cdef double fill_qty = fill.last_qty.as_f64_c()
-        cdef double fill_px = fill.last_px.as_f64_c()
+        fill_px = fill.last_px.as_decimal()
+        fill_qty = fill.last_qty.as_decimal()
+
+        cdef Money quote_pnl
+        if instrument.instrument_class == InstrumentClass.SPORTS_BETTING:
+            # Back/lay accounting: only realize PnL on closing portion of position flips
+            if position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
+                fill_qty = min(fill_qty, position.quantity.as_decimal())
+            quote_pnl = Money(fill_px * fill_qty, quote_currency)
+        else:
+            quote_pnl = instrument.notional_value(fill.last_qty, fill.last_px)
 
         if fill.order_side == OrderSide.BUY:
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(fill_qty, base_currency)
-            pnls[quote_currency] = Money(-(fill_px * fill_qty), quote_currency)
+
+            pnls[quote_currency] = Money(-quote_pnl.as_decimal(), quote_currency)
         elif fill.order_side == OrderSide.SELL:
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
-            pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
-        else:
+
+            pnls[quote_currency] = Money(quote_pnl.as_decimal(), quote_currency)
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {fill.order_side}")  # pragma: no cover (design-time error)
 
         return list(pnls.values())
+
+    cpdef Money balance_impact(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        OrderSide order_side,
+    ):
+        cdef Money notional = instrument.notional_value(quantity, price)
+        if order_side == OrderSide.BUY:
+            return Money.from_raw_c(-notional._mem.raw, notional.currency)
+        elif order_side == OrderSide.SELL:
+            return Money.from_raw_c(notional._mem.raw, notional.currency)
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError(f"invalid `OrderSide`, was {order_side}")  # pragma: no cover (design-time error)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,18 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+from decimal import Decimal
 
-from ib_insync import BarData
-
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar_aggregation import BarAggregation
+from nautilus_trader.model.data import BarAggregation
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.instruments.base import Instrument
 
 
 MKT_DEPTH_OPERATIONS = {
@@ -45,51 +43,45 @@ IB_TICK_TYPE = {
 }
 
 
-def generate_trade_id(ts_event: int, price: float, size: float) -> TradeId:
-    id = TradeId(f"{int(nanos_to_secs(ts_event))}-{price}-{size}")
-    assert len(id.value) < 36, f"TradeId too long, was {len(id.value)}"
-    return id
+def what_to_show(bar_type: BarType) -> str:
+    mapping = {
+        PriceType.ASK: "ASK",
+        PriceType.BID: "BID",
+        PriceType.LAST: "TRADES",
+        PriceType.MID: "MIDPOINT",
+    }
+    if str(bar_type.instrument_id.venue) == "PAXOS" and bar_type.spec.price_type == PriceType.LAST:
+        return "AGGTRADES"
+    else:
+        return mapping[bar_type.spec.price_type]
 
 
-def parse_bar_data(
-    bar: BarData,
-    is_revision: bool,
-    bar_type: Bar,
-    instrument: Instrument,
-    ts_init: int,
-) -> Bar:
-    return Bar(
-        bar_type=bar_type,
-        open=instrument.make_price(bar.open),
-        high=instrument.make_price(bar.high),
-        low=instrument.make_price(bar.low),
-        close=instrument.make_price(bar.close),
-        volume=instrument.make_qty(max(bar.volume, 0)),
-        ts_event=dt_to_unix_nanos(bar.date),
-        ts_init=ts_init,
-        is_revision=is_revision,
-    )
+def generate_trade_id(ts_event: int, price: float, size: Decimal) -> TradeId:
+    trade_id = TradeId(f"{int(nanos_to_secs(ts_event))}-{price}-{size}")
+    assert len(trade_id.value) < 36, f"TradeId too long, was {len(id.value)}"  # type: ignore
+
+    return trade_id
 
 
-def bar_spec_to_bar_size(bar_spec: BarSpecification) -> tuple:
+def bar_spec_to_bar_size(bar_spec: BarSpecification) -> str:
     aggregation = bar_spec.aggregation
     step = bar_spec.step
-    if aggregation == BarAggregation.SECOND and step == 5:
-        return True, f"{step} secs"  # When True uses RealTimeBar (existing behavior),
-        # When False uses subscription with Historical Data
-    elif aggregation == BarAggregation.SECOND and step in [10, 15, 30]:
-        return False, f"{step} secs"
+
+    if (aggregation == BarAggregation.SECOND and step == 5) or (
+        aggregation == BarAggregation.SECOND and step in [10, 15, 30]
+    ):
+        return f"{step} secs"
     elif aggregation == BarAggregation.MINUTE and step in [1, 2, 3, 5, 10, 15, 20, 30]:
-        return False, f"{step} min{'' if step == 1 else 's'}"
+        return f"{step} min{'' if step == 1 else 's'}"
     elif aggregation == BarAggregation.HOUR and step in [1, 2, 3, 4, 8]:
-        return False, f"{step} hour{'' if step == 1 else 's'}"
+        return f"{step} hour{'' if step == 1 else 's'}"
     elif aggregation == BarAggregation.DAY and step == 1:
-        return False, f"{step} day"
+        return f"{step} day"
     elif aggregation == BarAggregation.WEEK and step == 1:
-        return False, f"{step} week"
+        return f"{step} week"
     else:
         raise ValueError(
-            f"InteractiveBrokers doesn't support subscription for {repr(bar_spec)}",
+            f"InteractiveBrokers doesn't support subscription for {bar_spec!r}",
         )
 
 

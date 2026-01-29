@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
@@ -21,7 +20,7 @@ from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 
 class BinanceSpotUserDataHttpAPI(BinanceUserDataHttpAPI):
     """
-    Provides access to the `Binance Spot/Margin` User Data HTTP REST API.
+    Provides access to the Binance Spot/Margin User Data HTTP REST API.
 
     Parameters
     ----------
@@ -29,6 +28,7 @@ class BinanceSpotUserDataHttpAPI(BinanceUserDataHttpAPI):
         The Binance REST API client.
     account_type : BinanceAccountType
         The Binance account type, used to select the endpoint.
+
     """
 
     def __init__(
@@ -43,5 +43,5 @@ class BinanceSpotUserDataHttpAPI(BinanceUserDataHttpAPI):
 
         if not account_type.is_spot_or_margin:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover (design-time error)  # noqa
+                f"`BinanceAccountType` not SPOT, MARGIN or ISOLATED_MARGIN, was {account_type}",  # pragma: no cover (design-time error)
             )
